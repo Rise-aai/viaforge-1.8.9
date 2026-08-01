@@ -1,0 +1,328 @@
+import me.modmuss50.mpp.ReleaseType
+
+String runGitCommand(Project project, List<String> args) {
+    try {
+        def output = new ByteArrayOutputStream()
+        project.exec {
+            commandLine(["git"] + args)
+            standardOutput = output
+            ignoreExitValue = true
+        }
+
+        def result = output.toString("UTF-8").trim()
+        return result ? result : "unknown"
+    } catch (Exception ignored) {
+        return "unknown"
+    }
+}
+
+String latestCommitHash(Project project) {
+    return runGitCommand(project, ["rev-parse", "--short", "HEAD"])
+}
+
+String latestCommitMessage(Project project) {
+    return runGitCommand(project, ["log", "-1", "--pretty=%B"])
+}
+
+buildscript {
+    // Unify build logic of all submodules in here, ugly but easier since we have to deal with a lot random stuff
+    repositories {
+        gradlePluginPortal()
+
+        maven {
+            url = "https://maven.minecraftforge.net/"
+        }
+        maven {
+            url = "https://repo.spongepowered.org/repository/maven-public/"
+        }
+    }
+
+    dependencies {
+        classpath "com.gradleup.shadow:shadow-gradle-plugin:9.4.1"
+        classpath "net.minecraftforge.gradle:ForgeGradle:[6.0.36,6.2)"
+        classpath "org.spongepowered:mixingradle:0.7-SNAPSHOT"
+        classpath "xyz.wagyourtail.jvmdowngrader:gradle-plugin:1.3.6"
+        classpath "me.modmuss50.mod-publish-plugin:me.modmuss50.mod-publish-plugin.gradle.plugin:1.1.0"
+        classpath "net.raphimc.class-token-replacer:net.raphimc.class-token-replacer.gradle.plugin:1.1.7"
+    }
+}
+
+allprojects {
+    apply plugin: "java-library"
+    apply plugin: "com.gradleup.shadow"
+    apply plugin: "xyz.wagyourtail.jvmdowngrader"
+
+    java {
+        // Minecraft 1.17+ required Java 17 to compile,
+        // Minecraft 1.20.5+ required Java 21 to compile
+        toolchain.languageVersion = JavaLanguageVersion.of(21)
+    }
+
+    // Always set min java version to 17, for java 8 versions the jar is manually downgraded so it doesn't matter.
+    compileJava.setSourceCompatibility("17")
+    compileJava.setTargetCompatibility("17")
+
+    // Configuration used to include dependencies to the final jars
+    configurations {
+        library
+        implementation.extendsFrom(library)
+    }
+
+    repositories {
+        maven {
+            url = "https://maven.minecraftforge.net/"
+        }
+        maven {
+            url = "https://repo.spongepowered.org/repository/maven-public"
+        }
+        maven {
+            url = "https://maven.neoforged.net/releases"
+        }
+        maven {
+            url = "https://repo.viaversion.com"
+            metadataSources {
+                // Prevent Gradle from checking against correct Java version, needed since we downgrade libraries
+                // on include
+                mavenPom()
+                artifact()
+            }
+        }
+    }
+
+    dependencies {
+        library "com.viaversion:viaversion-common:${vv_version}"
+        library "com.viaversion:viabackwards-common:${vb_version}"
+        library "com.viaversion:viarewind-common:${vr_version}"
+        library "com.viaversion:viaaprilfools-common:${vaf_version}"
+        library("net.raphimc:ViaLegacy:${vl_version}") {
+            exclude group: "com.google.code.gson", module: "gson"
+        }
+    }
+}
+
+subprojects {
+    def applyFg = project.hasProperty("applyFg") ? Boolean.parseBoolean(project.applyFg) : true
+    if (applyFg) {
+        apply plugin: "net.minecraftforge.gradle"
+        apply plugin: "org.spongepowered.mixin"
+    }
+    apply plugin: "me.modmuss50.mod-publish-plugin"
+
+    // Define the jar output attributes for all platforms
+    base {
+        group = "com.viaversion"
+        archivesName = project.name
+        version = "4.4.0+" + (System.getenv("GITHUB_RUN_NUMBER") ?: "unknown")
+        description = "Client-side ViaVersion implementation for MinecraftForge and NeoForge"
+    }
+
+    // Get the game version (1.16.5) from the forge version
+    // Kinda ugly but easier than having multiple constants
+    def mcVersion = project.hasProperty("mcVersion") ? project.mcVersion : project.forge_version.split("-")[0]
+
+    // Used to execute code only for specific submodules
+    def versionId = Integer.parseInt(mcVersion.replace(".", ""))
+
+    compileJava.options.encoding = "UTF-8"
+
+    dependencies {
+        library project(":") // Include the base project
+    }
+
+    if (applyFg) {
+        minecraft {
+            runs {
+                client {
+                    workingDirectory project.file("run")
+
+                    property "forge.logging.markers", "REGISTRIES"
+                    property "forge.logging.console.level", "debug"
+
+                    // mixin
+                    property "mixin.debug.export", "true"
+                    property "mixin.hotSwap", "true"
+                    property "fml.coreMods.load", "com.viaversion.viaforge.mixin.MixinLoader"
+                    // Only required for MC 1.12, but modern Forges skips this anyway
+                    args "-mixin.config=" + "mixins.viaforge.json"
+
+                    // source set
+                    mods {
+                        "${project.name}" {
+                            source sourceSets.main
+                        }
+                    }
+                }
+            }
+        }
+
+        sourceSets.main.resources {
+            srcDir "src/generated/resources"
+        }
+
+        dependencies {
+            minecraft "net.minecraftforge:forge:${forge_version}"
+
+            if (versionId > 1_8_9) {
+                library "org.slf4j:slf4j-api:2.0.17"
+                library "org.spongepowered:mixin:${mixin_version}"
+                annotationProcessor "org.spongepowered:mixin:${mixin_version}:processor"
+            }
+        }
+
+        mixin {
+            add sourceSets.main, "mixins.viaforge.refmap.json"
+        }
+
+        reobf {
+            shadowJar {}
+        }
+    }
+
+    // Replace the version in the mod files with the project version
+    // Since this depends on the platform version, we can't define it in the global scope :(
+    tasks {
+        processResources {
+            for (final def file in ["mcmod.info", "META-INF/mods.toml", "META-INF/neoforge.mods.toml"]) {
+                filesMatching(file) {
+                    expand(
+                        "version": project.version,
+                        "description": project.description
+                    )
+                }
+            }
+        }
+    }
+
+    // 1. jar
+    // 2. shadowJar
+    // 3. downgradeJar and shadeDowngradedApi
+    // 4. re-obfuscate the shadowJar
+
+    jar {
+        manifest.attributes(
+            "Specification-Title": project.name,
+            "Specification-Vendor": "EnZaXD",
+            "Specification-Version": project.version,
+            "Implementation-Title": project.name,
+            "Implementation-Vendor": "EnZaXD",
+            "Implementation-Version": project.version,
+            "Implementation-Timestamp": new Date().format("yyyy-MM-dd" - "HH:mm:ssZ"),
+            "Implementation-Contact": "git@florianreuth.de",
+            "TweakClass": "org.spongepowered.asm.launch.MixinTweaker",
+            "TweakOrder": "0",
+            "FMLCorePluginContainsFMLMod": "true", // Only required for MC 1.12, but modern Forges skips this anyway
+            "FMLCorePlugin": "com.viaversion.viaforge.mixin.MixinLoader", // Counterpart to the above
+            "MixinConfigs": "mixins.viaforge.json",
+            "ForceLoadAsMod": "true"
+        )
+        enabled = false
+    }
+
+    shadowJar {
+        destinationDirectory = temporaryDir
+        configurations = [project.configurations.library] // Include the dependencies from the include configuration
+        duplicatesStrategy DuplicatesStrategy.EXCLUDE
+
+        // Prevent conflicts with Forge's weird service loading
+        exclude("META-INF/maven/**")
+
+        // Workaround GH-94
+        relocate("org.slf4j", "com.viaversion.viaforge.libs.slf4j")
+    }
+
+    downgradeJar {
+        inputFile = shadowJar.archiveFile
+        destinationDirectory = temporaryDir
+        logLevel = "FATAL"
+    }
+
+    if (!applyFg) {
+        afterEvaluate {
+            // Unimined creates remap tasks later; pick the remapped archive task dynamically.
+            def remapArchiveTask = tasks.findAll {
+                it.name.toLowerCase().contains("remap") && it.hasProperty("archiveFile")
+            }.sort { it.name }.find { it.name.toLowerCase().contains("shadow") } ?: tasks.findAll {
+                it.name.toLowerCase().contains("remap") && it.hasProperty("archiveFile")
+            }.sort { it.name }.find()
+
+            if (remapArchiveTask == null) {
+                throw new GradleException("No remap archive task found for ${project.path}")
+            }
+
+            tasks.named("downgradeJar") {
+                dependsOn(remapArchiveTask)
+                inputFile = remapArchiveTask.archiveFile
+            }
+
+            // remapJar (from the dev jar) can overwrite the release artifact path in build/libs.
+            def remapDevJarTask = tasks.findByName("remapJar")
+            if (remapDevJarTask != null) {
+                remapDevJarTask.enabled = false
+            }
+
+            tasks.matching { it.name == "publishCurseforge" || it.name == "publishModrinth" || it.name == "publishMods" }.configureEach {
+                dependsOn(remapArchiveTask)
+                dependsOn(tasks.named("shadeDowngradedApi"))
+            }
+        }
+    }
+
+    shadeDowngradedApi {
+        // Keep publish artifact stable across toolchains; Unimined jar names can carry a -dev classifier.
+        archiveFileName = "${project.name}-${project.version}.jar"
+        logLevel = "FATAL"
+    }
+
+    jar.dependsOn("shadowJar")
+    // Downgrade the jar to Java 8 for Minecraft 1.16.5 and below
+    jar.dependsOn("shadeDowngradedApi")
+
+    publishMods {
+        file = tasks.shadeDowngradedApi.archiveFile
+        def commitHash = latestCommitHash(rootProject)
+        def commitMessage = latestCommitMessage(rootProject).replaceAll("\\s+", " ").trim()
+        if (commitHash == "unknown" || commitMessage == "unknown") {
+            changelog = "A changelog can be found at https://github.com/ViaVersion/ViaForge/commits"
+        } else {
+            changelog = "[${commitHash}](https://github.com/ViaVersion/ViaForge/commit/${commitHash}) ${commitMessage}"
+        }
+        version = project.version.toString() + "+" + mcVersion
+        displayName = version
+        modLoaders.add("forge")
+        type = ReleaseType.ALPHA
+
+        curseforge {
+            accessToken = System.getenv("CURSEFORGE_TOKEN")
+            projectId = "418933"
+
+            javaVersions.add(JavaVersion.VERSION_1_8)
+            minecraftVersions.add(mcVersion.toString())
+
+            clientRequired = true
+        }
+        modrinth {
+            accessToken = System.getenv("MODRINTH_TOKEN")
+            projectId = "Z6se2s8f"
+
+            minecraftVersions.add(mcVersion.toString())
+        }
+    }
+
+    // Make sure to have the re-obfuscated jar for publishing
+    tasks.publishMods.dependsOn tasks.build
+}
+
+dependencies {
+    compileOnly "io.netty:netty-all:4.2.2.Final"
+    compileOnly "org.slf4j:slf4j-api:2.0.17"
+}
+
+apply plugin: "net.raphimc.class-token-replacer"
+
+sourceSets {
+    main {
+        classTokenReplacer {
+            property("\${version}", project.version)
+        }
+    }
+}
