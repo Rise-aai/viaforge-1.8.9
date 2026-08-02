@@ -33,6 +33,16 @@ DS_Store
 
 # Misc
 
+# Keep the IDE run roots available before Unimined's pre-run tasks execute,
+# while ignoring all generated game data inside them.
 run/
+!viaforge-mc189/run/
+viaforge-mc189/run/*
+!viaforge-mc189/run/client/
+!viaforge-mc189/run/server/
+viaforge-mc189/run/client/*
+viaforge-mc189/run/server/*
+!viaforge-mc189/run/client/.gitkeep
+!viaforge-mc189/run/server/.gitkeep
 viaforge-mc189/publishMods/*
 forge*changelog.txt
