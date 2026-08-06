@@ -26,7 +26,7 @@ public abstract class MixinViaRewindBlockItemPacketRewriter {
     public abstract Item handleItemToClient(UserConnection connection, Item item);
 
     @Inject(method = "lambda$registerPackets$3", at = @At("RETURN"), remap = false)
-    private static void viaforge$keepOffhandSlot(PacketWrapper wrapper, CallbackInfo ci) {
+    private void viaforge$keepOffhandSlot(PacketWrapper wrapper, CallbackInfo ci) {
         if (!viaforge$isModernTarget() || !wrapper.is(Types.UNSIGNED_BYTE, 0)
                 || !wrapper.is(Types.SHORT, 0)) {
             return;
@@ -75,7 +75,7 @@ public abstract class MixinViaRewindBlockItemPacketRewriter {
     }
 
     @Inject(method = "lambda$registerPackets$2", at = @At("RETURN"), remap = false)
-    private static void viaforge$sendCapturedOffhand(PacketWrapper wrapper, CallbackInfo ci) {
+    private void viaforge$sendCapturedOffhand(PacketWrapper wrapper, CallbackInfo ci) {
         if (!viaforge$isModernTarget()) {
             return;
         }
