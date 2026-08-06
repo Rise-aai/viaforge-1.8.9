@@ -5,6 +5,7 @@
   "package": "com.viaversion.viaforge.mixin.impl",
   "refmap": "mixins.viaforge-mc189.refmap.json",
   "client": [
+    "GuiContainerAccessor",
     "MixinGuiMainMenu",
     "MixinGuiInventory",
     "MixinContainerPlayer",
