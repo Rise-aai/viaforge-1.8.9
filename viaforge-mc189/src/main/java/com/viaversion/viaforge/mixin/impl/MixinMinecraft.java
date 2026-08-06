@@ -12,8 +12,12 @@ package com.viaversion.viaforge.mixin.impl;
 
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
+import com.viaversion.viaforge.compat.ModernOffhandKeyBinding;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.multiplayer.PlayerControllerMP;
+import net.minecraft.client.settings.GameSettings;
 import net.minecraft.util.MovingObjectPosition;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -32,8 +36,40 @@ public abstract class MixinMinecraft {
     @Shadow
     public MovingObjectPosition objectMouseOver;
 
+    @Shadow
+    public PlayerControllerMP playerController;
+
+    @Shadow
+    public GameSettings gameSettings;
+
+    @Shadow
+    public GuiScreen currentScreen;
+
     @Unique
     private boolean viaforge$delayedAttackSwing;
+
+    @Inject(method = "runTick", at = @At("RETURN"), require = 0)
+    private void viaforge$handleOffhandSwap(CallbackInfo ci) {
+        if (!viaforge$isModernTarget()
+                || thePlayer == null
+                || playerController == null
+                || currentScreen != null
+                || !(gameSettings instanceof ModernOffhandKeyBinding)) {
+            return;
+        }
+
+        final ModernOffhandKeyBinding keys = (ModernOffhandKeyBinding) gameSettings;
+        if (keys.viaforge$getSwapOffhandKey() != null
+                && keys.viaforge$getSwapOffhandKey().isPressed()) {
+            playerController.windowClick(
+                    thePlayer.inventoryContainer.windowId,
+                    45,
+                    thePlayer.inventory.currentItem,
+                    2,
+                    thePlayer
+            );
+        }
+    }
 
     @Inject(method = "clickMouse", at = @At("HEAD"), require = 0)
     private void viaforge$resetDelayedAttackSwing(CallbackInfo ci) {

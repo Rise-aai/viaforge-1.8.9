@@ -23,6 +23,7 @@ import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaversion.connection.ConnectionDetails;
 import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernPlayerPhysics;
+import com.viaversion.viaforge.compat.ModernOffhandInventory;
 import com.viaversion.viaforge.compat.ModernSequenceStorage;
 import com.viaversion.viarewind.protocol.v1_9to1_8.storage.PlayerPositionTracker;
 import io.netty.channel.Channel;
@@ -35,6 +36,7 @@ import net.minecraft.network.play.server.S07PacketRespawn;
 import net.minecraft.network.play.server.S08PacketPlayerPosLook;
 import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
+import net.minecraft.network.play.server.S30PacketWindowItems;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -68,6 +70,28 @@ public class MixinNetHandlerPlayClient {
 
     @Unique
     private volatile boolean viaforge$pendingTeleportResponse;
+
+    @Inject(method = "handleSetSlot", at = @At("RETURN"), require = 0)
+    private void viaforge$syncOffhandSlot(S2FPacketSetSlot packet, CallbackInfo ci) {
+        if (packet.func_149175_c() == 0
+                && packet.func_149173_d() == 45
+                && Minecraft.getMinecraft().thePlayer != null) {
+            ((ModernOffhandInventory) Minecraft.getMinecraft().thePlayer.inventory)
+                    .viaforge$setOffhand(packet.func_149174_e());
+        }
+    }
+
+    @Inject(method = "handleWindowItems", at = @At("RETURN"), require = 0)
+    private void viaforge$syncOffhandWindow(S30PacketWindowItems packet, CallbackInfo ci) {
+        if (packet.func_148911_c() != 0
+                || Minecraft.getMinecraft().thePlayer == null
+                || packet.getItemStacks().length <= 45) {
+            return;
+        }
+
+        ((ModernOffhandInventory) Minecraft.getMinecraft().thePlayer.inventory)
+                .viaforge$setOffhand(packet.getItemStacks()[45]);
+    }
 
     /** Match Grim's authoritative completion surface for consumed items. */
     @Inject(method = "handleSetSlot", at = @At("RETURN"), require = 0)

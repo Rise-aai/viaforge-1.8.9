@@ -12,13 +12,19 @@ package com.viaversion.viaforge.mixin.impl;
 
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
+import com.viaversion.viaforge.compat.ModernOffhandInteraction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerControllerMP;
+import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.network.play.client.C02PacketUseEntity;
 import net.minecraft.util.AxisAlignedBB;
+import net.minecraft.util.BlockPos;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
@@ -30,6 +36,47 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(PlayerControllerMP.class)
 public abstract class MixinPlayerControllerMP {
+
+    @Inject(method = "onPlayerRightClick", at = @At("HEAD"), cancellable = true, require = 0)
+    private void viaforge$rightClickOffhandBlock(
+            EntityPlayerSP player,
+            WorldClient world,
+            BlockPos pos,
+            EnumFacing face,
+            Vec3 hitVec,
+            CallbackInfoReturnable<Boolean> cir
+    ) {
+        if (viaforge$isModernTarget() && ModernOffhandInteraction.hasOffhand(player)
+                && ModernOffhandInteraction.sendUseItemOnBlock(player, pos, face, hitVec)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "sendUseItem", at = @At("HEAD"), cancellable = true, require = 0)
+    private void viaforge$rightClickOffhandAir(
+            EntityPlayer player,
+            net.minecraft.world.World world,
+            ItemStack stack,
+            CallbackInfoReturnable<Boolean> cir
+    ) {
+        if (viaforge$isModernTarget() && player instanceof EntityPlayerSP
+                && ModernOffhandInteraction.hasOffhand(player)
+                && ModernOffhandInteraction.sendUseItem((EntityPlayerSP) player)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "interactWithEntitySendPacket", at = @At("HEAD"), cancellable = true, require = 0)
+    private void viaforge$rightClickOffhandEntity(
+            EntityPlayer player,
+            Entity target,
+            CallbackInfoReturnable<Boolean> cir
+    ) {
+        if (viaforge$isModernTarget() && ModernOffhandInteraction.hasOffhand(player)) {
+            ModernOffhandInteraction.sendInteract(player, target);
+            cir.setReturnValue(target.interactFirst(player));
+        }
+    }
 
     @Unique
     private double viaforge$motionBeforeAttackX;
@@ -120,6 +167,23 @@ public abstract class MixinPlayerControllerMP {
     ) {
         if (!viaforge$isModernTarget()
                 || Minecraft.getMinecraft().playerController.isSpectatorMode()) {
+            return;
+        }
+
+        if (ModernOffhandInteraction.hasOffhand(player)) {
+            final Vec3 relativeHit = new Vec3(
+                    hitResult.hitVec.xCoord - target.posX,
+                    hitResult.hitVec.yCoord - target.posY,
+                    hitResult.hitVec.zCoord - target.posZ
+            );
+            final Vec3 clamped = viaforge$clampInteractionHit(target, target.getEntityBoundingBox(), relativeHit);
+            if (!Minecraft.getMinecraft().gameSettings.keyBindAttack.isKeyDown()) {
+                ModernOffhandInteraction.sendInteractAt(player, target, clamped);
+                final boolean consumed = target.interactAt(player, clamped);
+                cir.setReturnValue(consumed);
+            } else {
+                cir.setReturnValue(true);
+            }
             return;
         }
 

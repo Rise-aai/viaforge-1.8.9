@@ -1,0 +1,124 @@
+/*
+ * This file is part of ViaForge.
+ */
+package com.viaversion.viaforge.compat;
+
+import com.viaversion.viaversion.api.connection.UserConnection;
+import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
+import com.viaversion.viaversion.api.type.Types;
+import com.viaversion.viaversion.protocols.v1_8to1_9.packet.ServerboundPackets1_9;
+import com.viaversion.viarewind.protocol.v1_9to1_8.Protocol1_9To1_8;
+import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.network.NetHandlerPlayClient;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.BlockPos;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.util.Vec3;
+
+/** Sends 1.9 hand-aware packets from the 1.8 client. */
+public final class ModernOffhandInteraction {
+
+    private ModernOffhandInteraction() {
+    }
+
+    public static boolean hasOffhand(EntityPlayer player) {
+        return player != null
+                && player.inventory.getCurrentItem() == null
+                && getOffhand(player) != null;
+    }
+
+    public static ItemStack getOffhand(EntityPlayer player) {
+        if (!(player.inventory instanceof ModernOffhandInventory)) {
+            return null;
+        }
+        return ((ModernOffhandInventory) player.inventory).viaforge$getOffhand();
+    }
+
+    public static boolean sendUseItem(EntityPlayerSP player) {
+        final ItemStack stack = getOffhand(player);
+        final UserConnection connection = getConnection(player);
+        if (stack == null || connection == null) {
+            return false;
+        }
+
+        final PacketWrapper wrapper = PacketWrapper.create(ServerboundPackets1_9.USE_ITEM, connection);
+        wrapper.write(Types.VAR_INT, 1);
+        wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
+        sendSwing(connection);
+
+        player.setItemInUse(stack, stack.getMaxItemUseDuration());
+        return true;
+    }
+
+    public static boolean sendUseItemOnBlock(
+            EntityPlayerSP player,
+            BlockPos pos,
+            EnumFacing face,
+            Vec3 hitVec
+    ) {
+        final UserConnection connection = getConnection(player);
+        if (connection == null || getOffhand(player) == null) {
+            return false;
+        }
+
+        final PacketWrapper wrapper = PacketWrapper.create(ServerboundPackets1_9.USE_ITEM_ON, connection);
+        wrapper.write(Types.BLOCK_POSITION1_8,
+                new com.viaversion.viaversion.api.minecraft.BlockPosition(pos.getX(), pos.getY(), pos.getZ()));
+        wrapper.write(Types.VAR_INT, face.getIndex());
+        wrapper.write(Types.VAR_INT, 1);
+        wrapper.write(Types.FLOAT, (float) (hitVec.xCoord - pos.getX()));
+        wrapper.write(Types.FLOAT, (float) (hitVec.yCoord - pos.getY()));
+        wrapper.write(Types.FLOAT, (float) (hitVec.zCoord - pos.getZ()));
+        wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
+        sendSwing(connection);
+        return true;
+    }
+
+    public static void sendInteract(EntityPlayer player, Entity target) {
+        final UserConnection connection = getConnection(player);
+        if (connection == null) {
+            return;
+        }
+
+        final PacketWrapper wrapper = PacketWrapper.create(ServerboundPackets1_9.INTERACT, connection);
+        wrapper.write(Types.VAR_INT, target.getEntityId());
+        wrapper.write(Types.VAR_INT, 0);
+        wrapper.write(Types.VAR_INT, 1);
+        wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
+        sendSwing(connection);
+    }
+
+    public static void sendInteractAt(EntityPlayer player, Entity target, Vec3 hit) {
+        final UserConnection connection = getConnection(player);
+        if (connection == null) {
+            return;
+        }
+
+        final PacketWrapper wrapper = PacketWrapper.create(ServerboundPackets1_9.INTERACT, connection);
+        wrapper.write(Types.VAR_INT, target.getEntityId());
+        wrapper.write(Types.VAR_INT, 2);
+        wrapper.write(Types.FLOAT, (float) hit.xCoord);
+        wrapper.write(Types.FLOAT, (float) hit.yCoord);
+        wrapper.write(Types.FLOAT, (float) hit.zCoord);
+        wrapper.write(Types.VAR_INT, 1);
+        wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
+        sendSwing(connection);
+    }
+
+    private static void sendSwing(UserConnection connection) {
+        final PacketWrapper swing = PacketWrapper.create(ServerboundPackets1_9.SWING, connection);
+        swing.write(Types.VAR_INT, 1);
+        swing.scheduleSendToServer(Protocol1_9To1_8.class);
+    }
+
+    private static UserConnection getConnection(EntityPlayer player) {
+        if (!(player instanceof EntityPlayerSP)) {
+            return null;
+        }
+        final NetHandlerPlayClient netHandler = ((EntityPlayerSP) player).sendQueue;
+        return netHandler.getNetworkManager().channel()
+                .attr(com.viaversion.viaforge.common.ViaForgeCommon.VF_VIA_USER).get();
+    }
+}
