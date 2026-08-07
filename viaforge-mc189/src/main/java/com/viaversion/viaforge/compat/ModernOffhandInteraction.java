@@ -12,6 +12,7 @@ import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.network.NetHandlerPlayClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.EnumFacing;
@@ -34,6 +35,26 @@ public final class ModernOffhandInteraction {
             return null;
         }
         return ((ModernOffhandInventory) player.inventory).viaforge$getOffhand();
+    }
+
+    public static boolean shouldUseItemAfterBlock(EntityPlayer player) {
+        final ItemStack stack = getOffhand(player);
+        return stack != null && stack.getItemUseAction() != EnumAction.NONE;
+    }
+
+    public static boolean sendSwapItemWithOffhand(EntityPlayerSP player) {
+        final UserConnection connection = getConnection(player);
+        if (connection == null) {
+            return false;
+        }
+
+        final PacketWrapper wrapper = PacketWrapper.create(ServerboundPackets1_9.PLAYER_ACTION, connection);
+        wrapper.write(Types.VAR_INT, 6);
+        wrapper.write(Types.BLOCK_POSITION1_8,
+                new com.viaversion.viaversion.api.minecraft.BlockPosition(0, 0, 0));
+        wrapper.write(Types.BYTE, (byte) -1);
+        wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
+        return true;
     }
 
     public static boolean sendUseItem(EntityPlayerSP player) {

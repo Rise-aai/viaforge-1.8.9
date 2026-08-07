@@ -62,13 +62,7 @@ public abstract class MixinMinecraft {
         final ModernOffhandKeyBinding keys = (ModernOffhandKeyBinding) gameSettings;
         if (keys.viaforge$getSwapOffhandKey() != null
                 && keys.viaforge$getSwapOffhandKey().isPressed()) {
-            playerController.windowClick(
-                    thePlayer.inventoryContainer.windowId,
-                    45,
-                    thePlayer.inventory.currentItem,
-                    2,
-                    thePlayer
-            );
+            ModernOffhandInteraction.sendSwapItemWithOffhand(thePlayer);
         }
     }
 

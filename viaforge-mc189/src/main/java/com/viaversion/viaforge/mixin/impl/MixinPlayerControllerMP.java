@@ -51,10 +51,16 @@ public abstract class MixinPlayerControllerMP {
             return;
         }
 
-        if (viaforge$isModernTarget() && ModernOffhandInteraction.hasOffhand(player)
-                && ModernOffhandInteraction.sendUseItemOnBlock(player, pos, face, hitVec)) {
-            cir.setReturnValue(true);
+        if (!viaforge$isModernTarget()
+                || !ModernOffhandInteraction.hasOffhand(player)
+                || !ModernOffhandInteraction.sendUseItemOnBlock(player, pos, face, hitVec)) {
+            return;
         }
+
+        if (ModernOffhandInteraction.shouldUseItemAfterBlock(player)) {
+            ModernOffhandInteraction.sendUseItem(player);
+        }
+        cir.setReturnValue(true);
     }
 
     @Inject(method = "sendUseItem", at = @At("HEAD"), cancellable = true, require = 0)

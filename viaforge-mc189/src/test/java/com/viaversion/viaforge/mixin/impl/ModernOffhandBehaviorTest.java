@@ -34,12 +34,32 @@ public class ModernOffhandBehaviorTest {
     }
 
     @Test
-    public void firstPersonOffhandUsesCompactMirroredTransform() throws Exception {
+    public void offhandSwapUsesTheModernActionPacketInsteadOfLegacySlotClick() throws Exception {
+        final String source = readMainSource("MixinMinecraft.java");
+
+        assertTrue(source.contains("ModernOffhandInteraction.sendSwapItemWithOffhand(thePlayer)"));
+        assertFalse(source.contains("playerController.windowClick("));
+    }
+
+    @Test
+    public void blockFallbackContinuesIntoUsableOffhandItem() throws Exception {
+        final String source = readMainSource("MixinPlayerControllerMP.java");
+
+        assertTrue(source.contains("ModernOffhandInteraction.shouldUseItemAfterBlock(player)"));
+        assertTrue(source.contains("ModernOffhandInteraction.sendUseItem(player)"));
+    }
+
+    @Test
+    public void firstPersonOffhandReusesVanillaTransformAndLighting() throws Exception {
         final String source = readMainSource("MixinItemRenderer.java");
 
-        assertTrue(source.contains("GlStateManager.translate(-0.56F, -0.52F, -0.72F);"));
-        assertTrue(source.contains("GlStateManager.scale(-0.4F, 0.4F, 0.4F);"));
-        assertFalse(source.contains("GlStateManager.rotate("));
+        assertTrue(source.contains("viaforge$transformFirstPersonItem(0.0F, 0.0F);"));
+        assertTrue(source.contains("GlStateManager.scale(-1.0F, 1.0F, 1.0F);"));
+        assertTrue(source.contains("RenderHelper.enableStandardItemLighting();"));
+        assertTrue(source.contains("viaforge$performDrinking(mc.thePlayer, partialTicks);"));
+        assertTrue(source.contains("GlStateManager.disableCull();"));
+        assertTrue(source.contains("GlStateManager.enableCull();"));
+        assertFalse(source.contains("GlStateManager.translate("));
     }
 
     private static String readMainSource(String fileName) throws Exception {
