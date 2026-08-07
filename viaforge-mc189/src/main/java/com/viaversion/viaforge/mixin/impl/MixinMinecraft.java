@@ -49,6 +49,27 @@ public abstract class MixinMinecraft {
     @Unique
     private boolean viaforge$delayedAttackSwing;
 
+    @Inject(method = "rightClickMouse", at = @At("HEAD"), require = 0)
+    private void viaforge$beginModernRightClick(CallbackInfo ci) {
+        if (viaforge$isModernTarget()) {
+            ModernOffhandInteraction.beginRightClick();
+        }
+    }
+
+    @Redirect(
+            method = "rightClickMouse",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/entity/EntityPlayerSP;swingItem()V"
+            ),
+            require = 0
+    )
+    private void viaforge$swingCorrectHandAfterBlockUse(EntityPlayerSP player) {
+        if (!viaforge$isModernTarget() || !ModernOffhandInteraction.wasClientOffhandAction()) {
+            player.swingItem();
+        }
+    }
+
     @Inject(method = "runTick", at = @At("RETURN"), require = 0)
     private void viaforge$handleOffhandSwap(CallbackInfo ci) {
         if (!viaforge$isModernTarget()
@@ -71,6 +92,7 @@ public abstract class MixinMinecraft {
         if (!viaforge$isModernTarget()
                 || thePlayer == null
                 || playerController == null
+                || thePlayer.inventory.getCurrentItem() != null
                 || !ModernOffhandInteraction.hasOffhand(thePlayer)) {
             return;
         }

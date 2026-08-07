@@ -24,6 +24,7 @@ import com.viaversion.viaversion.connection.ConnectionDetails;
 import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernPlayerPhysics;
 import com.viaversion.viaforge.compat.ModernOffhandInventory;
+import com.viaversion.viaforge.compat.ModernOffhandStorage;
 import com.viaversion.viaforge.compat.ModernSequenceStorage;
 import com.viaversion.viarewind.protocol.v1_9to1_8.storage.PlayerPositionTracker;
 import io.netty.channel.Channel;
@@ -73,7 +74,7 @@ public class MixinNetHandlerPlayClient {
 
     @Inject(method = "handleSetSlot", at = @At("RETURN"), require = 0)
     private void viaforge$syncOffhandSlot(S2FPacketSetSlot packet, CallbackInfo ci) {
-        if (packet.func_149175_c() == 0
+        if (packet.func_149175_c() == ModernOffhandStorage.CLIENT_WINDOW_ID
                 && packet.func_149173_d() == 45
                 && Minecraft.getMinecraft().thePlayer != null) {
             ((ModernOffhandInventory) Minecraft.getMinecraft().thePlayer.inventory)
@@ -101,10 +102,17 @@ public class MixinNetHandlerPlayClient {
         }
 
         final Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft.thePlayer == null
-                || minecraft.thePlayer.isUsingItem()
-                || packet.func_149175_c() != 0
-                || packet.func_149173_d() != minecraft.thePlayer.inventory.currentItem + 36) {
+        if (minecraft.thePlayer == null || minecraft.thePlayer.isUsingItem()) {
+            return;
+        }
+
+        final int window = packet.func_149175_c();
+        final int slot = packet.func_149173_d();
+        final boolean mainHandUpdate = window == 0
+                && slot == minecraft.thePlayer.inventory.currentItem + 36;
+        final boolean offhandUpdate = window == ModernOffhandStorage.CLIENT_WINDOW_ID
+                && slot == 45;
+        if (!mainHandUpdate && !offhandUpdate) {
             return;
         }
 

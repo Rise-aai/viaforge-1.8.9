@@ -9,6 +9,9 @@ import com.viaversion.viaversion.api.minecraft.item.Item;
 /** Temporary per-connection bridge for the slot 45 item removed by ViaRewind. */
 public final class ModernOffhandStorage implements StorableObject {
 
+    /** A window id ignored by vanilla 1.8 and consumed by our client mixin. */
+    public static final byte CLIENT_WINDOW_ID = -2;
+
     private Item item;
     private boolean pending;
 

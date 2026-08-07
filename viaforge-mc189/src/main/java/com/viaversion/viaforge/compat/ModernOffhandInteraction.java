@@ -21,13 +21,13 @@ import net.minecraft.util.Vec3;
 /** Sends 1.9 hand-aware packets from the 1.8 client. */
 public final class ModernOffhandInteraction {
 
+    private static boolean clientOffhandAction;
+
     private ModernOffhandInteraction() {
     }
 
     public static boolean hasOffhand(EntityPlayer player) {
-        return player != null
-                && player.inventory.getCurrentItem() == null
-                && getOffhand(player) != null;
+        return player != null && getOffhand(player) != null;
     }
 
     public static ItemStack getOffhand(EntityPlayer player) {
@@ -40,6 +40,14 @@ public final class ModernOffhandInteraction {
     public static boolean shouldUseItemAfterBlock(EntityPlayer player) {
         final ItemStack stack = getOffhand(player);
         return stack != null && stack.getItemUseAction() != EnumAction.NONE;
+    }
+
+    public static void beginRightClick() {
+        clientOffhandAction = false;
+    }
+
+    public static boolean wasClientOffhandAction() {
+        return clientOffhandAction;
     }
 
     public static boolean sendSwapItemWithOffhand(EntityPlayerSP player) {
@@ -67,9 +75,15 @@ public final class ModernOffhandInteraction {
         final PacketWrapper wrapper = PacketWrapper.create(ServerboundPackets1_9.USE_ITEM, connection);
         wrapper.write(Types.VAR_INT, 1);
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
-        sendSwing(connection);
+        clientOffhandAction = true;
 
-        player.setItemInUse(stack, stack.getMaxItemUseDuration());
+        final int previousSize = stack.stackSize;
+        final ItemStack result = stack.useItemRightClick(player.worldObj, player);
+        if (result != stack || result == null || result.stackSize != previousSize) {
+            ((ModernOffhandInventory) player.inventory).viaforge$setOffhand(
+                    result != null && result.stackSize > 0 ? result : null
+            );
+        }
         return true;
     }
 
@@ -93,7 +107,10 @@ public final class ModernOffhandInteraction {
         wrapper.write(Types.FLOAT, (float) (hitVec.yCoord - pos.getY()));
         wrapper.write(Types.FLOAT, (float) (hitVec.zCoord - pos.getZ()));
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
-        sendSwing(connection);
+        clientOffhandAction = true;
+        if (!shouldUseItemAfterBlock(player)) {
+            sendSwing(connection, player);
+        }
         return true;
     }
 
@@ -108,7 +125,7 @@ public final class ModernOffhandInteraction {
         wrapper.write(Types.VAR_INT, 0);
         wrapper.write(Types.VAR_INT, 1);
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
-        sendSwing(connection);
+        clientOffhandAction = true;
     }
 
     public static void sendInteractAt(EntityPlayer player, Entity target, Vec3 hit) {
@@ -125,13 +142,16 @@ public final class ModernOffhandInteraction {
         wrapper.write(Types.FLOAT, (float) hit.zCoord);
         wrapper.write(Types.VAR_INT, 1);
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
-        sendSwing(connection);
+        clientOffhandAction = true;
     }
 
-    private static void sendSwing(UserConnection connection) {
+    private static void sendSwing(UserConnection connection, EntityPlayer player) {
         final PacketWrapper swing = PacketWrapper.create(ServerboundPackets1_9.SWING, connection);
         swing.write(Types.VAR_INT, 1);
         swing.scheduleSendToServer(Protocol1_9To1_8.class);
+        if (player instanceof ModernOffhandPlayer) {
+            ((ModernOffhandPlayer) player).viaforge$swingOffhand();
+        }
     }
 
     private static UserConnection getConnection(EntityPlayer player) {

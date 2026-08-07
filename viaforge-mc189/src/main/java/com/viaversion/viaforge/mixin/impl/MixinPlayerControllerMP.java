@@ -37,6 +37,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(PlayerControllerMP.class)
 public abstract class MixinPlayerControllerMP {
 
+    @Unique
+    private Vec3 viaforge$pendingOffhandEntityHit;
+
     @Inject(method = "onPlayerRightClick", at = @At("RETURN"), cancellable = true, require = 0)
     private void viaforge$rightClickOffhandBlock(
             EntityPlayerSP player,
@@ -63,30 +66,45 @@ public abstract class MixinPlayerControllerMP {
         cir.setReturnValue(true);
     }
 
-    @Inject(method = "sendUseItem", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "sendUseItem", at = @At("RETURN"), cancellable = true, require = 0)
     private void viaforge$rightClickOffhandAir(
             EntityPlayer player,
             net.minecraft.world.World world,
             ItemStack stack,
             CallbackInfoReturnable<Boolean> cir
     ) {
-        if (viaforge$isModernTarget() && player instanceof EntityPlayerSP
-                && ModernOffhandInteraction.hasOffhand(player)
-                && ModernOffhandInteraction.sendUseItem((EntityPlayerSP) player)) {
+        if (Boolean.TRUE.equals(cir.getReturnValue())
+                || !viaforge$isModernTarget()
+                || !(player instanceof EntityPlayerSP)
+                || !ModernOffhandInteraction.hasOffhand(player)) {
+            return;
+        }
+
+        if (player.getItemInUse() == stack) {
+            player.clearItemInUse();
+        }
+        if (ModernOffhandInteraction.sendUseItem((EntityPlayerSP) player)) {
             cir.setReturnValue(true);
         }
     }
 
-    @Inject(method = "interactWithEntitySendPacket", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "interactWithEntitySendPacket", at = @At("RETURN"), cancellable = true, require = 0)
     private void viaforge$rightClickOffhandEntity(
             EntityPlayer player,
             Entity target,
             CallbackInfoReturnable<Boolean> cir
     ) {
-        if (viaforge$isModernTarget() && ModernOffhandInteraction.hasOffhand(player)) {
-            ModernOffhandInteraction.sendInteract(player, target);
-            cir.setReturnValue(target.interactFirst(player));
+        final Vec3 hit = viaforge$pendingOffhandEntityHit;
+        viaforge$pendingOffhandEntityHit = null;
+        if (Boolean.TRUE.equals(cir.getReturnValue())
+                || !viaforge$isModernTarget()
+                || hit == null
+                || !ModernOffhandInteraction.hasOffhand(player)) {
+            return;
         }
+
+        ModernOffhandInteraction.sendInteractAt(player, target, hit);
+        ModernOffhandInteraction.sendInteract(player, target);
     }
 
     @Unique
@@ -180,23 +198,7 @@ public abstract class MixinPlayerControllerMP {
                 || Minecraft.getMinecraft().playerController.isSpectatorMode()) {
             return;
         }
-
-        if (ModernOffhandInteraction.hasOffhand(player)) {
-            final Vec3 relativeHit = new Vec3(
-                    hitResult.hitVec.xCoord - target.posX,
-                    hitResult.hitVec.yCoord - target.posY,
-                    hitResult.hitVec.zCoord - target.posZ
-            );
-            final Vec3 clamped = viaforge$clampInteractionHit(target, target.getEntityBoundingBox(), relativeHit);
-            if (!Minecraft.getMinecraft().gameSettings.keyBindAttack.isKeyDown()) {
-                ModernOffhandInteraction.sendInteractAt(player, target, clamped);
-                final boolean consumed = target.interactAt(player, clamped);
-                cir.setReturnValue(consumed);
-            } else {
-                cir.setReturnValue(true);
-            }
-            return;
-        }
+        viaforge$pendingOffhandEntityHit = null;
 
         /*
          * 1.8 ray tracing expands entity hitboxes by collisionBorderSize
@@ -216,6 +218,7 @@ public abstract class MixinPlayerControllerMP {
         // Sending both produces an INTERACT_AT between ATTACK and ANIMATION,
         // a sequence modern clients never emit.
         if (Minecraft.getMinecraft().gameSettings.keyBindAttack.isKeyDown()) {
+            viaforge$useItemWhileAttacking(player);
             cir.setReturnValue(true);
             return;
         }
@@ -224,7 +227,20 @@ public abstract class MixinPlayerControllerMP {
         Minecraft.getMinecraft().getNetHandler().addToSendQueue(
                 new C02PacketUseEntity(target, hit)
         );
+        if (!consumed && ModernOffhandInteraction.hasOffhand(player)) {
+            viaforge$pendingOffhandEntityHit = hit;
+        }
         cir.setReturnValue(consumed);
+    }
+
+    @Unique
+    private void viaforge$useItemWhileAttacking(EntityPlayer player) {
+        final ItemStack mainHand = player.inventory.getCurrentItem();
+        if (mainHand != null) {
+            ((PlayerControllerMP) (Object) this).sendUseItem(player, player.worldObj, mainHand);
+        } else if (player instanceof EntityPlayerSP) {
+            ModernOffhandInteraction.sendUseItem((EntityPlayerSP) player);
+        }
     }
 
     @Unique

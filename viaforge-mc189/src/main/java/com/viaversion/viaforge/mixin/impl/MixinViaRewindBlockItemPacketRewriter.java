@@ -27,14 +27,15 @@ public abstract class MixinViaRewindBlockItemPacketRewriter {
 
     @Inject(method = "lambda$registerPackets$3", at = @At("RETURN"), remap = false)
     private void viaforge$keepOffhandSlot(PacketWrapper wrapper, CallbackInfo ci) {
-        if (!viaforge$isModernTarget() || !wrapper.is(Types.UNSIGNED_BYTE, 0)
+        if (!viaforge$isModernTarget() || !wrapper.is(Types.BYTE, 0)
                 || !wrapper.is(Types.SHORT, 0)) {
             return;
         }
 
-        final short window = wrapper.get(Types.UNSIGNED_BYTE, 0);
+        final byte window = wrapper.get(Types.BYTE, 0);
         final short slot = wrapper.get(Types.SHORT, 0);
         if (window == 0 && slot == 45 && wrapper.isCancelled()) {
+            wrapper.set(Types.BYTE, 0, ModernOffhandStorage.CLIENT_WINDOW_ID);
             wrapper.setCancelled(false);
         }
     }
@@ -88,7 +89,7 @@ public abstract class MixinViaRewindBlockItemPacketRewriter {
         final Item item = storage.takeItem();
 
         final PacketWrapper slot = wrapper.create(ClientboundPackets1_8.CONTAINER_SET_SLOT);
-        slot.write(Types.UNSIGNED_BYTE, (short) 0);
+        slot.write(Types.BYTE, ModernOffhandStorage.CLIENT_WINDOW_ID);
         slot.write(Types.SHORT, (short) 45);
         slot.write(Types.ITEM1_8, item);
         slot.scheduleSend(Protocol1_9To1_8.class);

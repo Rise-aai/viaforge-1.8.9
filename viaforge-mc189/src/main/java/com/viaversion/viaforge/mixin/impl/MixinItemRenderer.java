@@ -6,6 +6,7 @@ package com.viaversion.viaforge.mixin.impl;
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernOffhandInventory;
+import com.viaversion.viaforge.compat.ModernOffhandPlayer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.AbstractClientPlayer;
 import net.minecraft.client.renderer.GlStateManager;
@@ -80,10 +81,12 @@ public abstract class MixinItemRenderer {
     }
 
     private void viaforge$applyOffhandUseTransform(ItemStack stack, float partialTicks) {
+        final float swingProgress = ((ModernOffhandPlayer) mc.thePlayer)
+                .viaforge$getOffhandSwingProgress(partialTicks);
         if (!mc.thePlayer.isUsingItem()
                 || mc.thePlayer.getItemInUse() != stack
                 || mc.thePlayer.getItemInUseCount() <= 0) {
-            viaforge$transformFirstPersonItem(0.0F, 0.0F);
+            viaforge$transformFirstPersonItem(0.0F, swingProgress);
             return;
         }
 
@@ -91,7 +94,7 @@ public abstract class MixinItemRenderer {
         if (action == EnumAction.EAT || action == EnumAction.DRINK) {
             viaforge$performDrinking(mc.thePlayer, partialTicks);
         }
-        viaforge$transformFirstPersonItem(0.0F, 0.0F);
+        viaforge$transformFirstPersonItem(0.0F, swingProgress);
         if (action == EnumAction.BLOCK) {
             viaforge$doBlockTransformations();
         } else if (action == EnumAction.BOW) {

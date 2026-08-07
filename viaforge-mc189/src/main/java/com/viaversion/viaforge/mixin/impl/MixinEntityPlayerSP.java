@@ -13,6 +13,7 @@ package com.viaversion.viaforge.mixin.impl;
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernFluidPhysics;
+import com.viaversion.viaforge.compat.ModernOffhandPlayer;
 import com.viaversion.viaforge.compat.ModernPlayerPhysics;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
@@ -34,7 +35,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * instead of competing with it at the same priority.
  */
 @Mixin(value = EntityPlayerSP.class, priority = 900)
-public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics {
+public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, ModernOffhandPlayer {
+
+    @Unique
+    private static final int viaforge$offhandSwingDuration = 6;
+
+    @Unique
+    private boolean viaforge$offhandSwinging;
+
+    @Unique
+    private int viaforge$offhandSwingTicks;
+
+    @Unique
+    private float viaforge$offhandSwingProgress;
+
+    @Unique
+    private float viaforge$previousOffhandSwingProgress;
 
     @Unique
     private boolean viaforge$modernSwimming;
@@ -137,6 +153,50 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics {
         if (viaforge$isModernTarget()) {
             viaforge$usingItemAtPreviousTick = viaforge$usingItemAtTickStart;
         }
+    }
+
+    @Inject(method = "onLivingUpdate", at = @At("RETURN"), require = 0)
+    private void viaforge$updateOffhandSwing(CallbackInfo ci) {
+        viaforge$previousOffhandSwingProgress = viaforge$offhandSwingProgress;
+        if (!viaforge$isModernTarget()) {
+            viaforge$offhandSwinging = false;
+            viaforge$offhandSwingTicks = 0;
+            viaforge$offhandSwingProgress = 0.0F;
+            viaforge$previousOffhandSwingProgress = 0.0F;
+            return;
+        }
+
+        if (viaforge$offhandSwinging) {
+            viaforge$offhandSwingTicks++;
+            if (viaforge$offhandSwingTicks >= viaforge$offhandSwingDuration) {
+                viaforge$offhandSwingTicks = 0;
+                viaforge$offhandSwinging = false;
+            }
+        } else {
+            viaforge$offhandSwingTicks = 0;
+        }
+        viaforge$offhandSwingProgress = (float) viaforge$offhandSwingTicks
+                / (float) viaforge$offhandSwingDuration;
+    }
+
+    @Override
+    public void viaforge$swingOffhand() {
+        if (!viaforge$offhandSwinging
+                || viaforge$offhandSwingTicks >= viaforge$offhandSwingDuration / 2) {
+            viaforge$offhandSwingTicks = 0;
+            viaforge$offhandSwingProgress = 0.0F;
+            viaforge$previousOffhandSwingProgress = 0.0F;
+            viaforge$offhandSwinging = true;
+        }
+    }
+
+    @Override
+    public float viaforge$getOffhandSwingProgress(float partialTicks) {
+        float delta = viaforge$offhandSwingProgress - viaforge$previousOffhandSwingProgress;
+        if (delta < 0.0F) {
+            delta += 1.0F;
+        }
+        return viaforge$previousOffhandSwingProgress + delta * partialTicks;
     }
 
     /** Called after both vanilla and FDP have populated this tick's input. */
