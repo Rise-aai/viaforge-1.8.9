@@ -163,7 +163,7 @@ subprojects {
             minecraft "net.minecraftforge:forge:${forge_version}"
 
             if (versionId > 1_8_9) {
-                library "org.slf4j:slf4j-api:2.0.17"
+                library "org.slf4j:slf4j-api:2.0.18"
                 library "org.spongepowered:mixin:${mixin_version}"
                 annotationProcessor "org.spongepowered:mixin:${mixin_version}:processor"
             }
@@ -314,7 +314,7 @@ subprojects {
 
 dependencies {
     compileOnly "io.netty:netty-all:4.2.2.Final"
-    compileOnly "org.slf4j:slf4j-api:2.0.17"
+    compileOnly "org.slf4j:slf4j-api:2.0.18"
 }
 
 apply plugin: "net.raphimc.class-token-replacer"
