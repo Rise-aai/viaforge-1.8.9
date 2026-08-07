@@ -39,10 +39,8 @@ public abstract class MixinItemRenderer {
         }
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate(-0.56F, -0.43F, -0.72F);
-        GlStateManager.rotate(42.0F, 0.0F, 1.0F, 0.0F);
-        GlStateManager.rotate(18.0F, 0.0F, 0.0F, 1.0F);
-        GlStateManager.scale(-0.72F, 0.72F, 0.72F);
+        GlStateManager.translate(-0.56F, -0.52F, -0.72F);
+        GlStateManager.scale(-0.4F, 0.4F, 0.4F);
         GlStateManager.disableCull();
         ((ItemRenderer) (Object) this).renderItem(
                 mc.thePlayer,

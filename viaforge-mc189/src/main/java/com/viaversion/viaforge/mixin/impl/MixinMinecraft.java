@@ -12,6 +12,7 @@ package com.viaversion.viaforge.mixin.impl;
 
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
+import com.viaversion.viaforge.compat.ModernOffhandInteraction;
 import com.viaversion.viaforge.compat.ModernOffhandKeyBinding;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -68,6 +69,21 @@ public abstract class MixinMinecraft {
                     2,
                     thePlayer
             );
+        }
+    }
+
+    @Inject(method = "rightClickMouse", at = @At("RETURN"), require = 0)
+    private void viaforge$rightClickOffhandAir(CallbackInfo ci) {
+        if (!viaforge$isModernTarget()
+                || thePlayer == null
+                || playerController == null
+                || !ModernOffhandInteraction.hasOffhand(thePlayer)) {
+            return;
+        }
+
+        if (objectMouseOver == null
+                || objectMouseOver.typeOfHit == MovingObjectPosition.MovingObjectType.MISS) {
+            ModernOffhandInteraction.sendUseItem(thePlayer);
         }
     }
 

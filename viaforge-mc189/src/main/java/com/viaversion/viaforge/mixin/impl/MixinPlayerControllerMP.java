@@ -37,7 +37,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(PlayerControllerMP.class)
 public abstract class MixinPlayerControllerMP {
 
-    @Inject(method = "onPlayerRightClick", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "onPlayerRightClick", at = @At("RETURN"), cancellable = true, require = 0)
     private void viaforge$rightClickOffhandBlock(
             EntityPlayerSP player,
             WorldClient world,
@@ -47,6 +47,10 @@ public abstract class MixinPlayerControllerMP {
             Vec3 hitVec,
             CallbackInfoReturnable<Boolean> cir
     ) {
+        if (Boolean.TRUE.equals(cir.getReturnValue())) {
+            return;
+        }
+
         if (viaforge$isModernTarget() && ModernOffhandInteraction.hasOffhand(player)
                 && ModernOffhandInteraction.sendUseItemOnBlock(player, pos, face, hitVec)) {
             cir.setReturnValue(true);
