@@ -60,7 +60,7 @@ public final class ModernOffhandInteraction {
         wrapper.write(Types.VAR_INT, 6);
         wrapper.write(Types.BLOCK_POSITION1_8,
                 new com.viaversion.viaversion.api.minecraft.BlockPosition(0, 0, 0));
-        wrapper.write(Types.BYTE, (byte) -1);
+        wrapper.write(Types.UNSIGNED_BYTE, (short) 255);
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
         return true;
     }
@@ -103,15 +103,20 @@ public final class ModernOffhandInteraction {
                 new com.viaversion.viaversion.api.minecraft.BlockPosition(pos.getX(), pos.getY(), pos.getZ()));
         wrapper.write(Types.VAR_INT, face.getIndex());
         wrapper.write(Types.VAR_INT, 1);
-        wrapper.write(Types.FLOAT, (float) (hitVec.xCoord - pos.getX()));
-        wrapper.write(Types.FLOAT, (float) (hitVec.yCoord - pos.getY()));
-        wrapper.write(Types.FLOAT, (float) (hitVec.zCoord - pos.getZ()));
+        writeCursorPosition(wrapper, hitVec.xCoord - pos.getX());
+        writeCursorPosition(wrapper, hitVec.yCoord - pos.getY());
+        writeCursorPosition(wrapper, hitVec.zCoord - pos.getZ());
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
         clientOffhandAction = true;
         if (!shouldUseItemAfterBlock(player)) {
             sendSwing(connection, player);
         }
         return true;
+    }
+
+    private static void writeCursorPosition(PacketWrapper wrapper, double coordinate) {
+        final int scaled = Math.max(0, Math.min(16, (int) (coordinate * 16.0D)));
+        wrapper.write(Types.UNSIGNED_BYTE, (short) scaled);
     }
 
     public static void sendInteract(EntityPlayer player, Entity target) {

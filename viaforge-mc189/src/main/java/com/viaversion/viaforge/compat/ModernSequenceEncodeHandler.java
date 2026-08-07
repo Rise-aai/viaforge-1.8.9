@@ -65,10 +65,7 @@ public final class ModernSequenceEncodeHandler extends MessageToMessageEncoder<B
                 input.skipBytes(1); // Inside block
                 sequenceIndex = input.readerIndex();
             } else if (packetId == ServerboundPackets1_20_5.PLAYER_ACTION.getId()) {
-                final int action = Types.VAR_INT.readPrimitive(input);
-                if (action != 0 && action != 2) {
-                    return;
-                }
+                Types.VAR_INT.readPrimitive(input); // Action
                 input.skipBytes(Long.BYTES); // Block position
                 input.skipBytes(1); // Direction
                 sequenceIndex = input.readerIndex();

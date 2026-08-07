@@ -71,6 +71,38 @@ public class ModernOffhandBehaviorTest {
     }
 
     @Test
+    public void syntheticOffhandPacketsUseWireCompatibleOneNineFieldTypes() throws Exception {
+        final String source = readCompatSource("ModernOffhandInteraction.java");
+        final String swap = method(source, "public static boolean sendSwapItemWithOffhand", "public static boolean sendUseItem");
+        final String block = method(source, "public static boolean sendUseItemOnBlock", "public static void sendInteract");
+
+        assertTrue(swap.contains("wrapper.write(Types.UNSIGNED_BYTE, (short) 255)"));
+        assertFalse(swap.contains("wrapper.write(Types.BYTE"));
+        assertTrue(block.contains("writeCursorPosition(wrapper"));
+        assertFalse(block.contains("wrapper.write(Types.FLOAT"));
+    }
+
+    @Test
+    public void everyModernPlayerActionReceivesAFreshSequence() throws Exception {
+        final String source = readCompatSource("ModernSequenceEncodeHandler.java");
+        final String action = method(source, "} else if (packetId == ServerboundPackets1_20_5.PLAYER_ACTION.getId())", "} else {");
+
+        assertFalse(action.contains("action != 0 && action != 2"));
+        assertTrue(action.contains("Types.VAR_INT.readPrimitive(input)"));
+    }
+
+    @Test
+    public void offhandUseSurvivesLegacyMainHandChecksAndFinishesInSlotFortyFive() throws Exception {
+        final String source = readMainSource("MixinEntityPlayer.java");
+
+        assertTrue(source.contains("method = \"onUpdate\""));
+        assertTrue(source.contains("target = \"Lnet/minecraft/entity/player/InventoryPlayer;getCurrentItem()Lnet/minecraft/item/ItemStack;\""));
+        assertTrue(source.contains("itemInUse == offhand"));
+        assertTrue(source.contains("viaforge$setOffhand"));
+        assertTrue(source.contains("ci.cancel()"));
+    }
+
+    @Test
     public void offhandSlotUpdatesUseAnIgnoredLegacyWindowMarker() throws Exception {
         final String rewriter = readMainSource("MixinViaRewindBlockItemPacketRewriter.java");
         final String handler = readMainSource("MixinNetHandlerPlayClient.java");
