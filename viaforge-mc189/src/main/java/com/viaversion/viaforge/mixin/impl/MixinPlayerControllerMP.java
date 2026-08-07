@@ -41,6 +41,7 @@ public abstract class MixinPlayerControllerMP {
     private void viaforge$rightClickOffhandBlock(
             EntityPlayerSP player,
             WorldClient world,
+            ItemStack stack,
             BlockPos pos,
             EnumFacing face,
             Vec3 hitVec,
