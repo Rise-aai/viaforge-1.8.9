@@ -9,17 +9,13 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.ContainerPlayer;
 import net.minecraft.inventory.Slot;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ContainerPlayer.class)
-public abstract class MixinContainerPlayer {
-
-    @Shadow
-    protected abstract Slot addSlotToContainer(Slot slot);
+public class MixinContainerPlayer {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void viaforge$addOffhandSlot(
@@ -29,8 +25,12 @@ public abstract class MixinContainerPlayer {
             CallbackInfo ci
     ) {
         final ViaForgeCommon manager = ViaForgeCommon.getManager();
-        if (manager != null && manager.getTargetVersion() == ProtocolVersion.v1_20_5) {
-            addSlotToContainer(new Slot(inventory, 45, 77, 62));
+        if (manager != null
+                && manager.getTargetVersion() == ProtocolVersion.v1_20_5
+                && player.worldObj.isRemote) {
+            ((ContainerAccessor) this).viaforge$addSlotToContainer(
+                    new Slot(inventory, 45, 77, 62)
+            );
         }
     }
 }
