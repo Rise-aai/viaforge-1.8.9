@@ -13,6 +13,7 @@ package com.viaversion.viaforge.mixin.impl;
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernFluidPhysics;
+import com.viaversion.viaforge.compat.ModernHorizontalCollision;
 import com.viaversion.viaforge.compat.ModernPlayerPhysics;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
@@ -42,6 +43,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -50,6 +52,33 @@ import java.util.List;
 
 @Mixin(Entity.class)
 public abstract class MixinEntity {
+
+    @Unique
+    private static final ModernHorizontalCollision.BoxOperations<AxisAlignedBB>
+            viaforge$boxOperations = new ModernHorizontalCollision.BoxOperations<AxisAlignedBB>() {
+        @Override
+        public double calculateXOffset(
+                AxisAlignedBB collision,
+                AxisAlignedBB moving,
+                double requestedX
+        ) {
+            return collision.calculateXOffset(moving, requestedX);
+        }
+
+        @Override
+        public double calculateZOffset(
+                AxisAlignedBB collision,
+                AxisAlignedBB moving,
+                double requestedZ
+        ) {
+            return collision.calculateZOffset(moving, requestedZ);
+        }
+
+        @Override
+        public AxisAlignedBB offset(AxisAlignedBB box, double x, double z) {
+            return box.offset(x, 0.0D, z);
+        }
+    };
 
     @Shadow
     protected boolean isInWeb;
@@ -83,6 +112,33 @@ public abstract class MixinEntity {
 
     @Unique
     private int viaforge$lastModernFluidTick = Integer.MIN_VALUE;
+
+    @Unique
+    private List<AxisAlignedBB> viaforge$baseCollisions;
+
+    @Unique
+    private List<AxisAlignedBB> viaforge$stepCollisions;
+
+    @Unique
+    private double viaforge$baseRequestedX;
+
+    @Unique
+    private double viaforge$baseRequestedZ;
+
+    @Unique
+    private double viaforge$stepRequestedX;
+
+    @Unique
+    private double viaforge$stepRequestedZ;
+
+    @Unique
+    private ModernHorizontalCollision.Result<AxisAlignedBB> viaforge$baseHorizontal;
+
+    @Unique
+    private ModernHorizontalCollision.Result<AxisAlignedBB> viaforge$firstStepHorizontal;
+
+    @Unique
+    private ModernHorizontalCollision.Result<AxisAlignedBB> viaforge$secondStepHorizontal;
 
     /** Replace the legacy water/lava AABBs and current-pushing behavior. */
     @Inject(method = "handleWaterMovement", at = @At("HEAD"), cancellable = true, require = 0)
@@ -147,12 +203,8 @@ public abstract class MixinEntity {
                     }
 
                     if (block instanceof BlockLiquid && player.isPushedByWater()) {
-                        Vec3 blockFlow = block.modifyAcceleration(
-                                player.worldObj,
-                                position,
-                                player,
-                                new Vec3(0.0D, 0.0D, 0.0D)
-                        );
+                        Vec3 blockFlow = ModernFluidPhysics.getFlow(
+                                player.worldObj, position, material);
                         final double trackedHeight = water ? waterHeight : lavaHeight;
                         if (trackedHeight < 0.4D) {
                             blockFlow = new Vec3(
@@ -249,11 +301,68 @@ public abstract class MixinEntity {
     ) {
         viaforge$modernStepDesiredY = isInWeb ? y * 0.05F : y;
         viaforge$modernStepDownAdjusted = false;
+        viaforge$baseCollisions = null;
+        viaforge$stepCollisions = null;
+        viaforge$baseHorizontal = null;
+        viaforge$firstStepHorizontal = null;
+        viaforge$secondStepHorizontal = null;
         if ((Object) this instanceof EntityPlayerSP && viaforge$isModernTarget()) {
             final EntityPlayerSP player = (EntityPlayerSP) (Object) this;
             viaforge$moveStartX = player.posX;
             viaforge$moveStartZ = player.posZ;
         }
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;addCoord(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 0
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$captureBaseRequestedMovement(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        viaforge$baseRequestedX = x;
+        viaforge$baseRequestedZ = z;
+        return box.addCoord(x, y, z);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;addCoord(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 1
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$captureStepRequestedMovement(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        viaforge$stepRequestedX = x;
+        viaforge$stepRequestedZ = z;
+        return box.addCoord(x, y, z);
+    }
+
+    @ModifyVariable(method = "moveEntity", at = @At(value = "STORE"), ordinal = 0, require = 0)
+    private List<AxisAlignedBB> viaforge$captureBaseCollisions(List<AxisAlignedBB> collisions) {
+        viaforge$baseCollisions = collisions;
+        return collisions;
+    }
+
+    @ModifyVariable(method = "moveEntity", at = @At(value = "STORE"), ordinal = 1, require = 0)
+    private List<AxisAlignedBB> viaforge$captureStepCollisions(List<AxisAlignedBB> collisions) {
+        viaforge$stepCollisions = collisions;
+        return collisions;
     }
 
     @Inject(method = "moveEntity", at = @At("RETURN"), require = 0)
@@ -269,6 +378,18 @@ public abstract class MixinEntity {
 
         final EntityPlayerSP player = (EntityPlayerSP) (Object) this;
         final ModernPlayerPhysics physics = (ModernPlayerPhysics) player;
+        final float yawRadians = player.rotationYaw * 0.017453292F;
+        physics.viaforge$setMinorHorizontalCollision(
+                player.isCollidedHorizontally
+                        && ModernHorizontalCollision.isMinorCollision(
+                        MathHelper.sin(yawRadians),
+                        MathHelper.cos(yawRadians),
+                        player.moveStrafing,
+                        player.moveForward,
+                        player.posX - viaforge$moveStartX,
+                        player.posZ - viaforge$moveStartZ
+                )
+        );
         if (!player.onGround) {
             physics.viaforge$setMainSupportingBlock(null, false);
             return;
@@ -302,14 +423,6 @@ public abstract class MixinEntity {
             EntityPlayerSP player,
             BlockPos support
     ) {
-        final BlockPos oldOnPos = new BlockPos(
-                MathHelper.floor_double(player.posX),
-                MathHelper.floor_double(player.posY - 0.2F),
-                MathHelper.floor_double(player.posZ)
-        );
-        final boolean legacyAlreadyApplied = player.worldObj.getBlockState(oldOnPos).getBlock()
-                == Blocks.soul_sand;
-
         final BlockPos inBlock = new BlockPos(
                 MathHelper.floor_double(player.posX),
                 MathHelper.floor_double(player.posY),
@@ -327,7 +440,7 @@ public abstract class MixinEntity {
                     == Blocks.soul_sand;
         }
 
-        if (modernApplies && !legacyAlreadyApplied) {
+        if (modernApplies) {
             player.motionX *= 0.4D;
             player.motionZ *= 0.4D;
         }
@@ -384,13 +497,282 @@ public abstract class MixinEntity {
 
     @Unique
     private static boolean viaforge$hasSupportingPriority(BlockPos first, BlockPos second) {
-        if (first.getY() < second.getY()) {
-            return true;
+        if (first.getY() != second.getY()) {
+            return first.getY() > second.getY();
         }
-        final int deltaX = second.getX() - first.getX();
-        final int deltaZ = second.getZ() - first.getZ();
-        final int horizontalSum = deltaX + deltaZ;
-        return horizontalSum == 0 ? deltaX < 0 : horizontalSum < 0;
+        if (first.getZ() != second.getZ()) {
+            return first.getZ() > second.getZ();
+        }
+        return first.getX() > second.getX();
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateXOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 0
+            ),
+            require = 0
+    )
+    private double viaforge$resolveBaseX(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedX
+    ) {
+        if (viaforge$useModernHorizontalCollision() && viaforge$baseCollisions != null) {
+            if (viaforge$baseHorizontal == null) {
+                viaforge$baseHorizontal = ModernHorizontalCollision.resolve(
+                        moving,
+                        viaforge$baseCollisions,
+                        viaforge$baseRequestedX,
+                        viaforge$baseRequestedZ,
+                        viaforge$boxOperations
+                );
+            }
+            return viaforge$baseHorizontal.getX();
+        }
+        return collision.calculateXOffset(moving, requestedX);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateZOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 0
+            ),
+            require = 0
+    )
+    private double viaforge$resolveBaseZ(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedZ
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$baseHorizontal != null
+                ? viaforge$baseHorizontal.getZ()
+                : collision.calculateZOffset(moving, requestedZ);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateXOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 1
+            ),
+            require = 0
+    )
+    private double viaforge$resolveFirstStepX(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedX
+    ) {
+        if (viaforge$useModernHorizontalCollision() && viaforge$stepCollisions != null) {
+            if (viaforge$firstStepHorizontal == null) {
+                viaforge$firstStepHorizontal = ModernHorizontalCollision.resolve(
+                        moving,
+                        viaforge$stepCollisions,
+                        viaforge$stepRequestedX,
+                        viaforge$stepRequestedZ,
+                        viaforge$boxOperations
+                );
+            }
+            return viaforge$firstStepHorizontal.getX();
+        }
+        return collision.calculateXOffset(moving, requestedX);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateZOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 1
+            ),
+            require = 0
+    )
+    private double viaforge$resolveFirstStepZ(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedZ
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$firstStepHorizontal != null
+                ? viaforge$firstStepHorizontal.getZ()
+                : collision.calculateZOffset(moving, requestedZ);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateXOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 2
+            ),
+            require = 0
+    )
+    private double viaforge$resolveSecondStepX(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedX
+    ) {
+        if (viaforge$useModernHorizontalCollision() && viaforge$stepCollisions != null) {
+            if (viaforge$secondStepHorizontal == null) {
+                viaforge$secondStepHorizontal = ModernHorizontalCollision.resolve(
+                        moving,
+                        viaforge$stepCollisions,
+                        viaforge$stepRequestedX,
+                        viaforge$stepRequestedZ,
+                        viaforge$boxOperations
+                );
+            }
+            return viaforge$secondStepHorizontal.getX();
+        }
+        return collision.calculateXOffset(moving, requestedX);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateZOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 2
+            ),
+            require = 0
+    )
+    private double viaforge$resolveSecondStepZ(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedZ
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$secondStepHorizontal != null
+                ? viaforge$secondStepHorizontal.getZ()
+                : collision.calculateZOffset(moving, requestedZ);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;offset(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 2
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$applyBaseHorizontal(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$baseHorizontal != null
+                ? viaforge$baseHorizontal.getBox()
+                : box.offset(x, y, z);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;offset(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 3
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$skipBaseSecondHorizontalOffset(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$baseHorizontal != null
+                ? box
+                : box.offset(x, y, z);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;offset(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 5
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$applyFirstStepHorizontal(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$firstStepHorizontal != null
+                ? viaforge$firstStepHorizontal.getBox()
+                : box.offset(x, y, z);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;offset(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 6
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$skipFirstStepSecondHorizontalOffset(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$firstStepHorizontal != null
+                ? box
+                : box.offset(x, y, z);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;offset(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 8
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$applySecondStepHorizontal(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$secondStepHorizontal != null
+                ? viaforge$secondStepHorizontal.getBox()
+                : box.offset(x, y, z);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;offset(DDD)Lnet/minecraft/util/AxisAlignedBB;",
+                    ordinal = 9
+            ),
+            require = 0
+    )
+    private AxisAlignedBB viaforge$skipSecondStepSecondHorizontalOffset(
+            AxisAlignedBB box,
+            double x,
+            double y,
+            double z
+    ) {
+        return viaforge$useModernHorizontalCollision() && viaforge$secondStepHorizontal != null
+                ? box
+                : box.offset(x, y, z);
+    }
+
+    @Unique
+    private boolean viaforge$useModernHorizontalCollision() {
+        return (Object) this instanceof EntityPlayerSP && viaforge$isModernTarget();
     }
 
     /** 1.14+ preserves the requested Y movement while resolving a step down. */

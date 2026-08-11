@@ -18,6 +18,8 @@
     "MixinMovementInputFromOptions",
     "MixinEntityRenderer",
     "MixinBlockLadder",
+    "MixinBlockLilyPad",
+    "MixinBlockSoulSand",
     "MixinEntity",
     "MixinEntityLivingBase",
     "MixinEntityPlayer",

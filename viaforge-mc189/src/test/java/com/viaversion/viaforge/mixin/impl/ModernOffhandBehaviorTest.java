@@ -59,6 +59,7 @@ public class ModernOffhandBehaviorTest {
         final String method = method(source, "private void viaforge$rightClickOffhandAir", "@Inject(method = \"interactWithEntitySendPacket\"");
 
         assertTrue(method.contains("player.getItemInUse() == stack"));
+        assertTrue(method.contains("stack.getItemUseAction() != EnumAction.BLOCK"));
         assertTrue(method.contains("player.clearItemInUse()"));
     }
 
@@ -83,11 +84,11 @@ public class ModernOffhandBehaviorTest {
     }
 
     @Test
-    public void everyModernPlayerActionReceivesAFreshSequence() throws Exception {
+    public void onlyDiggingPlayerActionsReceiveAFreshSequence() throws Exception {
         final String source = readCompatSource("ModernSequenceEncodeHandler.java");
         final String action = method(source, "} else if (packetId == ServerboundPackets1_20_5.PLAYER_ACTION.getId())", "} else {");
 
-        assertFalse(action.contains("action != 0 && action != 2"));
+        assertTrue(action.contains("action != 0 && action != 2"));
         assertTrue(action.contains("Types.VAR_INT.readPrimitive(input)"));
     }
 
@@ -100,6 +101,29 @@ public class ModernOffhandBehaviorTest {
         assertTrue(source.contains("itemInUse == offhand"));
         assertTrue(source.contains("viaforge$setOffhand"));
         assertTrue(source.contains("ci.cancel()"));
+    }
+
+    @Test
+    public void activeOffhandFoodUsePreventsTheMainHandFromRestartingSwordBlock() throws Exception {
+        final String source = readMainSource("MixinPlayerControllerMP.java");
+        final String method = method(source, "private void viaforge$preserveActiveOffhandUse", "@Inject(method = \"onPlayerRightClick\"");
+
+        assertTrue(source.contains("private void viaforge$preserveActiveOffhandUse"));
+        assertTrue(source.contains("@Inject(method = \"sendUseItem\", at = @At(\"HEAD\"), cancellable = true, require = 0)"));
+        assertTrue(method.contains("player.getItemInUse() != ModernOffhandInteraction.getOffhand(player)"));
+        assertTrue(method.contains("stack.getItemUseAction() != EnumAction.BLOCK"));
+        assertTrue(method.contains("cir.setReturnValue(false)"));
+    }
+
+    @Test
+    public void modernAttackQueuesMainHandAnimationImmediatelyAfterAttack() throws Exception {
+        final String source = readMainSource("MixinPlayerControllerMP.java");
+        final String method = method(source, "private void viaforge$sendModernAttackThenAnimation", "@Inject(method = \"attackEntity\", at = @At(\"RETURN\"");
+
+        assertTrue(source.contains("@Redirect("));
+        assertTrue(method.contains("handler.addToSendQueue(packet)"));
+        assertTrue(method.contains("player.swingItem()"));
+        assertTrue(method.indexOf("handler.addToSendQueue(packet)") < method.indexOf("player.swingItem()"));
     }
 
     @Test

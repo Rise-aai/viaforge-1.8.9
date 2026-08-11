@@ -15,7 +15,6 @@ import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernFluidPhysics;
 import com.viaversion.viaforge.compat.ModernOffhandPlayer;
 import com.viaversion.viaforge.compat.ModernPlayerPhysics;
-import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.util.AxisAlignedBB;
@@ -27,6 +26,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /*
@@ -66,6 +66,9 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, Modern
 
     @Unique
     private boolean viaforge$supportingBlockOnGround;
+
+    @Unique
+    private boolean viaforge$minorHorizontalCollision;
 
     @Unique
     private float viaforge$modernEyeHeight = 1.62F;
@@ -112,6 +115,7 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, Modern
             viaforge$wasSprintingBeforeInput = false;
             viaforge$mainSupportingBlock = null;
             viaforge$supportingBlockOnGround = false;
+            viaforge$minorHorizontalCollision = false;
             viaforge$modernEyeHeight = 1.62F;
             viaforge$slowMovementFromPreviousPose = false;
             viaforge$modernWaterHeight = 0.0D;
@@ -245,7 +249,7 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, Modern
 
         if (player.isSprinting()
                 && player.isInWater()
-                && !player.isInsideOfMaterial(Material.water)
+                && !viaforge$isModernEyeInWater(player)
                 && !viaforge$modernSwimming) {
             player.setSprinting(false);
         }
@@ -258,6 +262,20 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, Modern
         }
 
         player.jumpMovementFactor = player.isSprinting() ? 0.025999999F : 0.02F;
+    }
+
+    /** Modern clients keep sprinting through collisions aligned with their input. */
+    @Redirect(
+            method = "onLivingUpdate",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lnet/minecraft/client/entity/EntityPlayerSP;isCollidedHorizontally:Z"
+            ),
+            require = 0
+    )
+    private boolean viaforge$modernBlockingHorizontalCollision(EntityPlayerSP player) {
+        return player.isCollidedHorizontally
+                && (!viaforge$isModernTarget() || !viaforge$minorHorizontalCollision);
     }
 
     /**
@@ -380,6 +398,16 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, Modern
     public void viaforge$setMainSupportingBlock(BlockPos position, boolean onGround) {
         viaforge$mainSupportingBlock = position;
         viaforge$supportingBlockOnGround = onGround;
+    }
+
+    @Override
+    public boolean viaforge$isMinorHorizontalCollision() {
+        return viaforge$minorHorizontalCollision;
+    }
+
+    @Override
+    public void viaforge$setMinorHorizontalCollision(boolean minor) {
+        viaforge$minorHorizontalCollision = minor;
     }
 
     @Override

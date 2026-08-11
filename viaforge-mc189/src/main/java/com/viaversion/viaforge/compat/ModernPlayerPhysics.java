@@ -37,6 +37,10 @@ public interface ModernPlayerPhysics {
 
     void viaforge$setMainSupportingBlock(BlockPos position, boolean onGround);
 
+    boolean viaforge$isMinorHorizontalCollision();
+
+    void viaforge$setMinorHorizontalCollision(boolean minor);
+
     void viaforge$markLocalItemUseFinished();
 
     void viaforge$confirmServerItemUseFinished();

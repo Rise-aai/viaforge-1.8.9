@@ -14,12 +14,15 @@ import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.viaversion.viaforge.common.ViaForgeCommon;
 import com.viaversion.viaforge.compat.ModernOffhandInteraction;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.network.NetHandlerPlayClient;
 import net.minecraft.client.multiplayer.PlayerControllerMP;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
+import net.minecraft.network.Packet;
 import net.minecraft.network.play.client.C02PacketUseEntity;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.BlockPos;
@@ -31,6 +34,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -39,6 +43,28 @@ public abstract class MixinPlayerControllerMP {
 
     @Unique
     private Vec3 viaforge$pendingOffhandEntityHit;
+
+    /**
+     * 1.8 repeatedly reuses the selected item while right-click is held. If
+     * the selected item is a sword, that restarts its block action and clears
+     * the active offhand food use before the food timer can finish.
+     */
+    @Inject(method = "sendUseItem", at = @At("HEAD"), cancellable = true, require = 0)
+    private void viaforge$preserveActiveOffhandUse(
+            EntityPlayer player,
+            net.minecraft.world.World world,
+            ItemStack stack,
+            CallbackInfoReturnable<Boolean> cir
+    ) {
+        if (!viaforge$isModernTarget()
+                || !(player instanceof EntityPlayerSP)
+                || player.getItemInUse() != ModernOffhandInteraction.getOffhand(player)
+                || stack.getItemUseAction() != EnumAction.BLOCK) {
+            return;
+        }
+
+        cir.setReturnValue(false);
+    }
 
     @Inject(method = "onPlayerRightClick", at = @At("RETURN"), cancellable = true, require = 0)
     private void viaforge$rightClickOffhandBlock(
@@ -80,6 +106,10 @@ public abstract class MixinPlayerControllerMP {
             return;
         }
 
+        if (player.getItemInUse() == stack
+                && stack.getItemUseAction() != EnumAction.BLOCK) {
+            return;
+        }
         if (player.getItemInUse() == stack) {
             player.clearItemInUse();
         }
@@ -132,21 +162,22 @@ public abstract class MixinPlayerControllerMP {
         viaforge$knockbackAttackSlow = EnchantmentHelper.getKnockbackModifier(player) > 0;
     }
 
-    /** 1.9+ requires ATTACK -> ANIMATION before any sprint-state packet. */
-    @Inject(
+    /** 1.9+ requires ATTACK -> ANIMATION with no packet between them. */
+    @Redirect(
             method = "attackEntity",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/network/NetHandlerPlayClient;addToSendQueue(Lnet/minecraft/network/Packet;)V",
-                    shift = At.Shift.AFTER
+                    target = "Lnet/minecraft/client/network/NetHandlerPlayClient;addToSendQueue(Lnet/minecraft/network/Packet;)V"
             ),
             require = 0
     )
-    private void viaforge$sendModernAttackAnimation(
+    private void viaforge$sendModernAttackThenAnimation(
+            NetHandlerPlayClient handler,
+            Packet packet,
             EntityPlayer player,
-            Entity target,
-            CallbackInfo ci
+            Entity target
     ) {
+        handler.addToSendQueue(packet);
         if (viaforge$isModernTarget()) {
             player.swingItem();
         }
