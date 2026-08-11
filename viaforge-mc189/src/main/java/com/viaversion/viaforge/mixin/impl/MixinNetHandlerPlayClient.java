@@ -35,7 +35,6 @@ import net.minecraft.network.Packet;
 import net.minecraft.network.play.client.C03PacketPlayer;
 import net.minecraft.network.play.server.S07PacketRespawn;
 import net.minecraft.network.play.server.S08PacketPlayerPosLook;
-import net.minecraft.network.play.server.S32PacketConfirmTransaction;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.network.play.server.S30PacketWindowItems;
 import org.spongepowered.asm.mixin.Final;
@@ -47,6 +46,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 @Mixin(NetHandlerPlayClient.class)
 public class MixinNetHandlerPlayClient {
 
@@ -55,22 +56,7 @@ public class MixinNetHandlerPlayClient {
     private NetworkManager netManager;
 
     @Unique
-    private double viaforge$pendingTeleportX;
-
-    @Unique
-    private double viaforge$pendingTeleportY;
-
-    @Unique
-    private double viaforge$pendingTeleportZ;
-
-    @Unique
-    private float viaforge$pendingTeleportYaw;
-
-    @Unique
-    private float viaforge$pendingTeleportPitch;
-
-    @Unique
-    private volatile boolean viaforge$pendingTeleportResponse;
+    private final AtomicInteger viaforge$earlyTeleportResponses = new AtomicInteger();
 
     @Inject(method = "handleSetSlot", at = @At("RETURN"), require = 0)
     private void viaforge$syncOffhandSlot(S2FPacketSetSlot packet, CallbackInfo ci) {
@@ -121,7 +107,7 @@ public class MixinNetHandlerPlayClient {
 
     @Inject(method = "handleJoinGame", at = @At("RETURN"))
     public void sendConnectionDetails(CallbackInfo ci) {
-        viaforge$pendingTeleportResponse = false;
+        viaforge$earlyTeleportResponses.set(0);
         final Channel channel = Minecraft.getMinecraft().thePlayer.sendQueue.getNetworkManager().channel();
         final UserConnection connection = channel.attr(ViaForgeCommon.VF_VIA_USER).get();
         if (connection == null) {
@@ -134,7 +120,7 @@ public class MixinNetHandlerPlayClient {
 
     @Inject(method = "handleRespawn", at = @At("HEAD"))
     private void viaforge$resetModernSequence(S07PacketRespawn packet, CallbackInfo ci) {
-        viaforge$pendingTeleportResponse = false;
+        viaforge$earlyTeleportResponses.set(0);
         final UserConnection connection = netManager.channel().attr(ViaForgeCommon.VF_VIA_USER).get();
         if (connection == null) {
             return;
@@ -153,8 +139,9 @@ public class MixinNetHandlerPlayClient {
      * Grim brackets teleports with transactions. A 1.8 client normally waits
      * for the main thread before replying to S08, which can let the following
      * transaction overtake the required POS+LOOK. Reply on the channel event
-     * loop, then still let vanilla apply the teleport and send its main-thread
-     * response so local and remote state remain synchronized.
+     * loop. The later vanilla response is suppressed because ViaRewind keeps
+     * the first movement packet after generating ACCEPT_TELEPORTATION; sending
+     * another identical C06 creates an extra tick packet for Grim's Timer.
      */
     @Inject(method = "handlePlayerPosLook", at = @At("HEAD"))
     private void viaforge$sendEarlyTeleportResponse(S08PacketPlayerPosLook packet, CallbackInfo ci) {
@@ -167,20 +154,8 @@ public class MixinNetHandlerPlayClient {
                 ? connection.get(PlayerPositionTracker.class)
                 : null;
         if (tracker != null && tracker.getConfirmId() != -1) {
-            viaforge$rememberTrackerPosition(tracker);
+            viaforge$earlyTeleportResponses.incrementAndGet();
             viaforge$sendTrackerPosition(netManager, tracker);
-        }
-    }
-
-    @Inject(method = "handleConfirmTransaction", at = @At("RETURN"))
-    private void viaforge$flushTeleportAfterTransaction(
-            S32PacketConfirmTransaction packet,
-            CallbackInfo ci
-    ) {
-        if (viaforge$isModernTarget()
-                && viaforge$pendingTeleportResponse
-                && !netManager.channel().eventLoop().inEventLoop()) {
-            viaforge$sendRememberedTeleport(netManager);
         }
     }
 
@@ -201,8 +176,7 @@ public class MixinNetHandlerPlayClient {
         final PlayerPositionTracker tracker = connection != null
                 ? connection.get(PlayerPositionTracker.class)
                 : null;
-        if (viaforge$pendingTeleportResponse) {
-            viaforge$sendRememberedTeleport(networkManager);
+        if (viaforge$consumeEarlyTeleportResponse()) {
             return;
         }
 
@@ -215,26 +189,16 @@ public class MixinNetHandlerPlayClient {
     }
 
     @Unique
-    private void viaforge$rememberTrackerPosition(PlayerPositionTracker tracker) {
-        viaforge$pendingTeleportX = tracker.getPosX();
-        viaforge$pendingTeleportY = tracker.getPosY();
-        viaforge$pendingTeleportZ = tracker.getPosZ();
-        viaforge$pendingTeleportYaw = tracker.getYaw();
-        viaforge$pendingTeleportPitch = tracker.getPitch();
-        viaforge$pendingTeleportResponse = true;
-    }
-
-    @Unique
-    private void viaforge$sendRememberedTeleport(NetworkManager networkManager) {
-        networkManager.sendPacket(new C03PacketPlayer.C06PacketPlayerPosLook(
-                viaforge$pendingTeleportX,
-                viaforge$pendingTeleportY,
-                viaforge$pendingTeleportZ,
-                viaforge$pendingTeleportYaw,
-                viaforge$pendingTeleportPitch,
-                false
-        ));
-        viaforge$pendingTeleportResponse = false;
+    private boolean viaforge$consumeEarlyTeleportResponse() {
+        while (true) {
+            final int pending = viaforge$earlyTeleportResponses.get();
+            if (pending == 0) {
+                return false;
+            }
+            if (viaforge$earlyTeleportResponses.compareAndSet(pending, pending - 1)) {
+                return true;
+            }
+        }
     }
 
     @Unique

@@ -12,10 +12,59 @@ package com.viaversion.viaforge.compat;
 
 public final class ModernHorizontalCollision {
 
+    private static final double COLLISION_EPSILON = 1.0E-7D;
     private static final double MINOR_COLLISION_ANGLE = 0.13962633907794952D;
     private static final double MINOR_COLLISION_LENGTH_SQUARED = 9.999999747378752E-6D;
 
     private ModernHorizontalCollision() {
+    }
+
+    /**
+     * Applies the 1.20 collision offset rule for one movement axis. The
+     * caller must first verify overlap on every other axis involved in the
+     * collision; this method handles the epsilon-aware movement limit.
+     */
+    public static double calculateOffset(
+            double collisionMin,
+            double collisionMax,
+            double movingMin,
+            double movingMax,
+            double movingOtherMin,
+            double movingOtherMax,
+            double collisionOtherMin,
+            double collisionOtherMax,
+            double offset
+    ) {
+        if (offset != 0.0D
+                && movingOtherMin - collisionOtherMax < -COLLISION_EPSILON
+                && movingOtherMax - collisionOtherMin > COLLISION_EPSILON) {
+            if (offset >= 0.0D) {
+                final double maxMove = collisionMin - movingMax;
+                return maxMove < -COLLISION_EPSILON
+                        ? offset
+                        : Math.min(maxMove, offset);
+            }
+            final double maxMove = collisionMax - movingMin;
+            return maxMove > COLLISION_EPSILON
+                    ? offset
+                    : Math.max(maxMove, offset);
+        }
+        return offset;
+    }
+
+    public static boolean overlaps(
+            double movingMin,
+            double movingMax,
+            double collisionMin,
+            double collisionMax
+    ) {
+        return movingMin - collisionMax < -COLLISION_EPSILON
+                && movingMax - collisionMin > COLLISION_EPSILON;
+    }
+
+    /** A side wall must not count as the block directly below the feet. */
+    public static boolean isSupportingCollision(double collisionMaxY, double feetY) {
+        return collisionMaxY <= feetY + COLLISION_EPSILON;
     }
 
     /** Matches LocalPlayer's 1.20.6 minor-horizontal-collision test. */

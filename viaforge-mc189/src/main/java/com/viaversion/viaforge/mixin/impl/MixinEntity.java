@@ -41,7 +41,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -62,7 +61,20 @@ public abstract class MixinEntity {
                 AxisAlignedBB moving,
                 double requestedX
         ) {
-            return collision.calculateXOffset(moving, requestedX);
+            if (!ModernHorizontalCollision.overlaps(
+                    moving.minY, moving.maxY, collision.minY, collision.maxY
+            ) || !ModernHorizontalCollision.overlaps(
+                    moving.minZ, moving.maxZ, collision.minZ, collision.maxZ
+            )) {
+                return requestedX;
+            }
+            return ModernHorizontalCollision.calculateOffset(
+                    collision.minX, collision.maxX,
+                    moving.minX, moving.maxX,
+                    moving.minY, moving.maxY,
+                    collision.minY, collision.maxY,
+                    requestedX
+            );
         }
 
         @Override
@@ -71,7 +83,20 @@ public abstract class MixinEntity {
                 AxisAlignedBB moving,
                 double requestedZ
         ) {
-            return collision.calculateZOffset(moving, requestedZ);
+            if (!ModernHorizontalCollision.overlaps(
+                    moving.minX, moving.maxX, collision.minX, collision.maxX
+            ) || !ModernHorizontalCollision.overlaps(
+                    moving.minY, moving.maxY, collision.minY, collision.maxY
+            )) {
+                return requestedZ;
+            }
+            return ModernHorizontalCollision.calculateOffset(
+                    collision.minZ, collision.maxZ,
+                    moving.minZ, moving.maxZ,
+                    moving.minX, moving.maxX,
+                    collision.minX, collision.maxX,
+                    requestedZ
+            );
         }
 
         @Override
@@ -475,7 +500,16 @@ public abstract class MixinEntity {
                             collisions,
                             player
                     );
-                    if (collisions.isEmpty()) {
+                    boolean reachesFeet = false;
+                    for (AxisAlignedBB collision : collisions) {
+                        if (ModernHorizontalCollision.isSupportingCollision(
+                                collision.maxY, search.maxY
+                        )) {
+                            reachesFeet = true;
+                            break;
+                        }
+                    }
+                    if (!reachesFeet) {
                         continue;
                     }
 
@@ -775,25 +809,104 @@ public abstract class MixinEntity {
         return (Object) this instanceof EntityPlayerSP && viaforge$isModernTarget();
     }
 
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateYOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 0
+            ),
+            require = 0
+    )
+    private double viaforge$resolveBaseY(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedY
+    ) {
+        return viaforge$calculateModernYOffset(collision, moving, requestedY);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateYOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 1
+            ),
+            require = 0
+    )
+    private double viaforge$resolveFirstStepY(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedY
+    ) {
+        return viaforge$calculateModernYOffset(collision, moving, requestedY);
+    }
+
+    @Redirect(
+            method = "moveEntity",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/util/AxisAlignedBB;calculateYOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
+                    ordinal = 2
+            ),
+            require = 0
+    )
+    private double viaforge$resolveSecondStepY(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedY
+    ) {
+        return viaforge$calculateModernYOffset(collision, moving, requestedY);
+    }
+
     /** 1.14+ preserves the requested Y movement while resolving a step down. */
-    @ModifyArg(
+    @Redirect(
             method = "moveEntity",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/util/AxisAlignedBB;calculateYOffset(Lnet/minecraft/util/AxisAlignedBB;D)D",
                     ordinal = 3
             ),
-            index = 1,
             require = 0
     )
-    private double viaforge$modernStepDownMovement(double stepDown) {
+    private double viaforge$resolveStepDownY(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double stepDown
+    ) {
         if (!viaforge$modernStepDownAdjusted
                 && (Object) this instanceof EntityPlayerSP
                 && viaforge$isModernTarget()) {
             viaforge$modernStepDownAdjusted = true;
-            return stepDown + viaforge$modernStepDesiredY;
+            stepDown += viaforge$modernStepDesiredY;
         }
-        return stepDown;
+        return viaforge$calculateModernYOffset(collision, moving, stepDown);
+    }
+
+    @Unique
+    private double viaforge$calculateModernYOffset(
+            AxisAlignedBB collision,
+            AxisAlignedBB moving,
+            double requestedY
+    ) {
+        if (!viaforge$useModernHorizontalCollision()) {
+            return collision.calculateYOffset(moving, requestedY);
+        }
+        if (!ModernHorizontalCollision.overlaps(
+                moving.minX, moving.maxX, collision.minX, collision.maxX
+        ) || !ModernHorizontalCollision.overlaps(
+                moving.minZ, moving.maxZ, collision.minZ, collision.maxZ
+        )) {
+            return requestedY;
+        }
+        return ModernHorizontalCollision.calculateOffset(
+                collision.minY, collision.maxY,
+                moving.minY, moving.maxY,
+                moving.minX, moving.maxX,
+                collision.minX, collision.maxX,
+                requestedY
+        );
     }
 
     /** 1.14+ normalizes movement input using doubles instead of floats. */

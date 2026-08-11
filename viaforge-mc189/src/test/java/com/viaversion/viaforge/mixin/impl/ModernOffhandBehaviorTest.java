@@ -68,6 +68,10 @@ public class ModernOffhandBehaviorTest {
         final String source = readMainSource("MixinMinecraft.java");
 
         assertTrue(source.contains("ModernOffhandInteraction.sendSwapItemWithOffhand(thePlayer)"));
+        assertTrue(source.contains("method = \"runTick\""));
+        assertTrue(source.contains("value = \"INVOKE\""));
+        assertTrue(source.contains("FMLCommonHandler;fireKeyInput()V"));
+        assertTrue(source.contains("shift = At.Shift.AFTER"));
         assertFalse(source.contains("playerController.windowClick("));
     }
 
@@ -77,7 +81,7 @@ public class ModernOffhandBehaviorTest {
         final String swap = method(source, "public static boolean sendSwapItemWithOffhand", "public static boolean sendUseItem");
         final String block = method(source, "public static boolean sendUseItemOnBlock", "public static void sendInteract");
 
-        assertTrue(swap.contains("wrapper.write(Types.UNSIGNED_BYTE, (short) 255)"));
+        assertTrue(swap.contains("wrapper.write(Types.UNSIGNED_BYTE, (short) 0)"));
         assertFalse(swap.contains("wrapper.write(Types.BYTE"));
         assertTrue(block.contains("writeCursorPosition(wrapper"));
         assertFalse(block.contains("wrapper.write(Types.FLOAT"));
@@ -145,6 +149,20 @@ public class ModernOffhandBehaviorTest {
         assertTrue(method.contains("offhandUpdate"));
         assertTrue(method.contains("ModernOffhandStorage.CLIENT_WINDOW_ID"));
         assertTrue(method.contains("slot == 45"));
+    }
+
+    @Test
+    public void completedFoodUseDoesNotApplySlowdownTwiceAfterUseRestarts() throws Exception {
+        final String source = readMainSource("MixinEntityPlayerSP.java");
+        final String method = method(
+                source,
+                "private void viaforge$updateModernSwimmingState",
+                "private void viaforge$rememberModernItemUseState"
+        );
+
+        assertTrue(method.contains(
+                "viaforge$carryItemUseSlowdown = !viaforge$usingItemAtTickStart"
+        ));
     }
 
     @Test

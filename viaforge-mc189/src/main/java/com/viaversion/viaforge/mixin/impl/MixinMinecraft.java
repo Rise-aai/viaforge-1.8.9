@@ -70,8 +70,16 @@ public abstract class MixinMinecraft {
         }
     }
 
-    @Inject(method = "runTick", at = @At("RETURN"), require = 0)
-    private void viaforge$handleOffhandSwap(CallbackInfo ci) {
+    @Inject(
+            method = "runTick",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraftforge/fml/common/FMLCommonHandler;fireKeyInput()V",
+                    shift = At.Shift.AFTER
+            ),
+            require = 0
+    )
+    private void viaforge$handleOffhandSwapAfterKeyInput(CallbackInfo ci) {
         if (!viaforge$isModernTarget()
                 || thePlayer == null
                 || playerController == null

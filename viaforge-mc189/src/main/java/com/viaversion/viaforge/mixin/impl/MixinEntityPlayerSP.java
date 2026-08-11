@@ -143,10 +143,13 @@ public abstract class MixinEntityPlayerSP implements ModernPlayerPhysics, Modern
             viaforge$itemUseFinishGraceTicks = 0;
             viaforge$serverItemUseFinished = false;
         }
-        viaforge$carryItemUseSlowdown = viaforge$itemUseFinishGraceTicks > 0
+        // A restarted use is already slowed by vanilla below this hook. The
+        // completion grace only fills a tick where no item is currently active;
+        // applying both multipliers would reduce input to 0.04 instead of 0.2.
+        viaforge$carryItemUseSlowdown = !viaforge$usingItemAtTickStart
+                && (viaforge$itemUseFinishGraceTicks > 0
                 || viaforge$usingItemAtPreviousTick
-                && !viaforge$usingItemAtTickStart
-                && Minecraft.getMinecraft().gameSettings.keyBindUseItem.isKeyDown();
+                && Minecraft.getMinecraft().gameSettings.keyBindUseItem.isKeyDown());
         if (viaforge$itemUseFinishGraceTicks > 0) {
             viaforge$itemUseFinishGraceTicks--;
         }

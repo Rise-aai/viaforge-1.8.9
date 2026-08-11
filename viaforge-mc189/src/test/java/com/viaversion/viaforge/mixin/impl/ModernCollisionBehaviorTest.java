@@ -120,6 +120,61 @@ public class ModernCollisionBehaviorTest {
         assertFalse(update.contains("viaforge$baseRequestedZ"));
     }
 
+    @Test
+    public void horizontalOffsetUsesModernCollisionEpsilon() throws Exception {
+        final Class<?> resolver = Class.forName(
+                "com.viaversion.viaforge.compat.ModernHorizontalCollision"
+        );
+        final Method offset = resolver.getDeclaredMethod(
+                "calculateOffset",
+                double.class,
+                double.class,
+                double.class,
+                double.class,
+                double.class,
+                double.class,
+                double.class,
+                double.class,
+                double.class
+        );
+        offset.setAccessible(true);
+
+        final double corrected = (double) offset.invoke(
+                null,
+                0.99999995D, 1.99999995D,
+                0.0D, 1.0D,
+                0.0D, 1.0D,
+                0.0D, 1.0D,
+                0.2D
+        );
+        assertEquals(0.99999995D - 1.0D, corrected, 0.0D);
+    }
+
+    @Test
+    public void verticalCollisionUsesModernEpsilonForEveryMoveBranch() throws Exception {
+        final String source = read("MixinEntity.java");
+        final String target = "target = \"Lnet/minecraft/util/AxisAlignedBB;calculateYOffset"
+                + "(Lnet/minecraft/util/AxisAlignedBB;D)D\"";
+
+        assertEquals(4, occurrences(source, target));
+        assertEquals(4, occurrences(source, "return viaforge$calculateModernYOffset("));
+        assertTrue(source.contains("stepDown += viaforge$modernStepDesiredY"));
+    }
+
+    @Test
+    public void supportingCollisionMustReachTheFeetInsteadOfOnlyTouchingTheSide() throws Exception {
+        final Class<?> resolver = Class.forName(
+                "com.viaversion.viaforge.compat.ModernHorizontalCollision"
+        );
+        final Method support = resolver.getDeclaredMethod(
+                "isSupportingCollision", double.class, double.class
+        );
+        support.setAccessible(true);
+
+        assertTrue((boolean) support.invoke(null, 1.0D, 1.0D));
+        assertFalse((boolean) support.invoke(null, 2.0D, 1.0D));
+    }
+
     private static double[] result(Object result) throws Exception {
         return new double[]{
                 (double) result.getClass().getMethod("getX").invoke(result),
@@ -223,5 +278,15 @@ public class ModernCollisionBehaviorTest {
         final int startIndex = source.indexOf(start);
         final int endIndex = source.indexOf(end, startIndex);
         return source.substring(startIndex, endIndex);
+    }
+
+    private static int occurrences(String source, String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = source.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 }

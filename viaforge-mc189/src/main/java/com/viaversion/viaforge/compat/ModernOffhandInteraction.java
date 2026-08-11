@@ -60,7 +60,9 @@ public final class ModernOffhandInteraction {
         wrapper.write(Types.VAR_INT, 6);
         wrapper.write(Types.BLOCK_POSITION1_8,
                 new com.viaversion.viaversion.api.minecraft.BlockPosition(0, 0, 0));
-        wrapper.write(Types.UNSIGNED_BYTE, (short) 255);
+        // PLAYER_ACTION face is a real block face for digging actions; the
+        // swap-with-offhand action is directionless and must use DOWN (0).
+        wrapper.write(Types.UNSIGNED_BYTE, (short) 0);
         wrapper.scheduleSendToServer(Protocol1_9To1_8.class);
         return true;
     }
