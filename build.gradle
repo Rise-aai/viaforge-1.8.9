@@ -313,7 +313,7 @@ subprojects {
 }
 
 dependencies {
-    compileOnly "io.netty:netty-all:4.2.2.Final"
+    compileOnly "io.netty:netty-all:4.2.16.Final"
     compileOnly "org.slf4j:slf4j-api:2.0.17"
 }
 
